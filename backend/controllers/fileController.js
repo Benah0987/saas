@@ -1,29 +1,20 @@
-import fs from 'fs';
-import xlsx from 'xlsx';
+import File from '../models/File.js';
 
-export const processFile = async (req, res) => {
+export const uploadFile = async (req, res) => {
     try {
-        const filePath = req.file.path;
-        const rawData = fs.readFileSync(filePath, 'utf-8');
+        if (!req.file) {
+            return res.status(400).json({ message: 'No file uploaded or invalid file type' });
+        }
 
-        // Process .bin file (custom parsing)
-        const extractedData = parseBinFile(rawData);
+        const file = new File({
+            filename: req.file.filename,
+            path: req.file.path,
+            owner: req.user.userId
+        });
 
-        // Convert to Excel
-        const workbook = xlsx.utils.book_new();
-        const worksheet = xlsx.utils.json_to_sheet(extractedData);
-        xlsx.utils.book_append_sheet(workbook, worksheet, "Extracted Data");
-
-        const excelFilePath = `uploads/${Date.now()}_data.xlsx`;
-        xlsx.writeFile(workbook, excelFilePath);
-
-        res.json({ message: 'File processed successfully', excelFilePath });
+        await file.save();
+        res.status(201).json({ message: 'File uploaded successfully', file });
     } catch (error) {
-        res.status(500).json({ message: 'Error processing file', error });
+        res.status(500).json({ message: 'Error uploading file', error });
     }
-};
-
-const parseBinFile = (data) => {
-    // Implement your custom `.bin` file parsing logic
-    return [{ key: "Example", value: "Data Extracted" }];
 };
