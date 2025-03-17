@@ -1,11 +1,11 @@
-import React, { useState, useContext } from 'react';
-import { AuthContext } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useContext } from "react";
+import { useNavigate } from "react-router-dom";
+import { AuthContext } from "../context/AuthContext";
 
 const Login = () => {
-  const { login } = useContext(AuthContext);
-  const [formData, setFormData] = useState({ username: '', password: '' });
-  const [error, setError] = useState(null);
+  const { login, error, loading } = useContext(AuthContext);
+  const [formData, setFormData] = useState({ email: "", password: "" });
+  const [localError, setLocalError] = useState(null);
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -14,31 +14,25 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try {
-      const res = await fetch('http://localhost:5000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
-
-      login(data.user, data.token);
-      navigate('/profile');
-    } catch (err) {
-      setError(err.message);
+    setLocalError(null);
+    
+    const response = await login(formData);
+    if (response.success) {
+      navigate("/home");
+    } else {
+      setLocalError(response.message);
     }
   };
 
   return (
-    <div>
+    <div className="container">
       <h2>Login</h2>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {localError && <p className="error-message">{localError}</p>}
+      {error && <p className="error-message">{error}</p>}
       <form onSubmit={handleSubmit}>
-        <input type="text" name="username" placeholder="Username" onChange={handleChange} required />
+        <input type="email" name="email" placeholder="Email" onChange={handleChange} required />
         <input type="password" name="password" placeholder="Password" onChange={handleChange} required />
-        <button type="submit">Login</button>
+        <button type="submit" disabled={loading}>{loading ? "Logging in..." : "Login"}</button>
       </form>
     </div>
   );

@@ -1,9 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
+import { AuthContext } from "../context/AuthContext";
 
 const Signup = () => {
+  const { signup, error, loading } = useContext(AuthContext);
   const [formData, setFormData] = useState({ username: "", email: "", password: "" });
-  const [error, setError] = useState(null);
+  const [localError, setLocalError] = useState(null);
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -12,57 +14,54 @@ const Signup = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try {
-      const res = await fetch("http://localhost:5000/api/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
-
-      alert("Signup successful! Please login.");
-      navigate("/login");
-    } catch (err) {
-      setError(err.message);
+    setLocalError(null);
+    
+    const response = await signup(formData);
+    if (response.success) {
+      navigate("/home");
+    } else {
+      setLocalError(response.message);
     }
   };
 
   return (
     <div className="container">
-      <h2>Sign Up</h2>
+      <h2>Signup</h2>
+      {localError && <p className="error-message">{localError}</p>}
       {error && <p className="error-message">{error}</p>}
+      
       <form onSubmit={handleSubmit}>
-        <input
-          type="text"
-          name="username"
-          placeholder="Username"
-          onChange={handleChange}
-          required
-          className="input-field"
+        <input 
+          type="text" 
+          name="username" 
+          placeholder="Username" 
+          value={formData.username} 
+          onChange={handleChange} 
+          required 
         />
-        <input
-          type="email"
-          name="email"
-          placeholder="Email"
-          onChange={handleChange}
-          required
-          className="input-field"
+        
+        <input 
+          type="email" 
+          name="email" 
+          placeholder="Email" 
+          value={formData.email} 
+          onChange={handleChange} 
+          required 
         />
-        <input
-          type="password"
-          name="password"
-          placeholder="Password"
-          onChange={handleChange}
-          required
-          className="input-field"
+        
+        <input 
+          type="password" 
+          name="password" 
+          placeholder="Password" 
+          value={formData.password} 
+          onChange={handleChange} 
+          required 
         />
-        <button type="submit" className="button">Sign Up</button>
+        
+        <button type="submit" disabled={loading}>
+          {loading ? "Signing up..." : "Signup"}
+        </button>
       </form>
-      <p className="auth-link">
-        Already have an account? <a href="/login">Login</a>
-      </p>
     </div>
   );
 };
