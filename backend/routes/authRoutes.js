@@ -2,30 +2,41 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import { authenticateUser } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// 📝 Register User
-router.post('/register', async (req, res) => {
+router.post("/register", async (req, res) => {
     try {
+        console.log("📥 Incoming Request Data:", req.body);  // Log incoming data
+
         const { username, email, password } = req.body;
+
+        if (!username || !email || !password) {
+            return res.status(400).json({ message: "All fields are required" });
+        }
 
         // Check if user already exists
         const existingUser = await User.findOne({ email });
         if (existingUser) {
-            return res.status(400).json({ message: 'User already exists' });
+            return res.status(400).json({ message: "Email already in use" });
         }
 
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // Create new user
-        const user = new User({ username, email, password: hashedPassword });
-        await user.save();
+        const newUser = new User({
+            username,
+            email,
+            password: hashedPassword,
+        });
 
-        res.status(201).json({ message: 'User registered successfully' });
+        await newUser.save();
+        res.status(201).json({ message: "Signup successful", user: newUser });
     } catch (error) {
-        res.status(500).json({ message: 'Error registering user', error });
+        console.error("🔥 Registration Error:", error);  // Log actual error
+        res.status(500).json({ message: "Internal Server Error", error });
     }
 });
 
@@ -59,4 +70,20 @@ router.get('/users', async (req, res) => {
     }
 });
 
+// 🏷 Get Profile (Protected Route)
+router.get("/profile", authenticateUser, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.userId).select("-password");
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        res.json(user);
+    } catch (error) {
+        res.status(500).json({ message: "Server error", error });
+    }
+});
+
 export default router;
+
+
+
+
