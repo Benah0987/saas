@@ -1,76 +1,138 @@
-import fs from 'fs';
-import path from 'path';
-import bibtexParse from 'bibtex-parse-js';
-import risParser from 'ris'; // Install: npm install ris
-import { parseString } from 'xml2js'; // Install: npm install xml2js
-import excelJS from 'exceljs';
+import risParser from '../node_modules/ris/src/index.js';
+import fs from "fs";
+import path from "path";
+import bibtexParse from "bibtex-parse-js";
+// import ris from "ris"; // ✅ Corrected import
+import { parseString } from "xml2js";
+import excelJS from "exceljs";
+import File from "../models/File.js"; // ✅ Use the existing File.js model
 
-// Function to read uploaded files
+// ✅ Read uploaded file content
 const readFile = async (filePath) => {
-    return fs.promises.readFile(filePath, 'utf8');
+  return fs.promises.readFile(filePath, "utf8");
 };
 
-// Function to analyze the file content
+// ✅ Analyze file contents
 const analyzeFile = async (filePath) => {
-    const ext = path.extname(filePath).toLowerCase();
-    const content = await readFile(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+  const content = await readFile(filePath);
+  let parsedData = [];
 
-    if (ext === '.bib' || ext === '.bibtex') {
-        return bibtexParse.toJSON(content);
-    } else if (ext === '.ris') {
-        return risParser.parse(content);
-    } else if (ext === '.nbib' || ext === '.xml') {
-        return new Promise((resolve, reject) => {
-            parseString(content, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-    } else if (ext === '.txt' || ext === '.enw') {
-        return content.split('\n'); // Simple text parsing
-    }
-    return { message: 'Unsupported file type' };
+  if (ext === ".bib" || ext === ".bibtex") {
+    const parsedBib = bibtexParse.toJSON(content);
+    parsedData = parsedBib.map((entry) => entry.entryTags);
+  } else if (ext === ".ris") {
+    parsedData = ris.parse(content);
+  } else if (ext === ".nbib" || ext === ".xml") {
+    parsedData = await new Promise((resolve, reject) => {
+      parseString(content, (err, result) => {
+        if (err) reject(err);
+        else resolve(result);
+      });
+    });
+  } else if (ext === ".txt" || ext === ".enw") {
+    parsedData = content.split("\n");
+  } else {
+    return { message: "Unsupported file type" };
+  }
+
+  return parsedData;
 };
 
-// Function to generate Excel from analyzed data
+// ✅ Generate Excel File Dynamically
 const generateExcel = async (data, filePath) => {
-    const workbook = new excelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Citations');
+  const workbook = new excelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Citations");
 
-    worksheet.columns = [
-        { header: 'Title', key: 'title', width: 40 },
-        { header: 'Author', key: 'author', width: 30 },
-        { header: 'Year', key: 'year', width: 10 },
-        { header: 'Source', key: 'source', width: 30 }
-    ];
+  if (data.length === 0) {
+    return { message: "No data to generate Excel" };
+  }
 
-    data.forEach(entry => {
-        worksheet.addRow({
-            title: entry.title || 'Unknown',
-            author: entry.author || 'Unknown',
-            year: entry.year || 'N/A',
-            source: entry.source || 'N/A'
-        });
+  // ✅ Extract headers dynamically
+  const headers = Object.keys(data[0]);
+  worksheet.columns = headers.map((header) => ({
+    header,
+    key: header,
+    width: 30,
+  }));
+
+  // ✅ Add data rows
+  data.forEach((entry) => {
+    worksheet.addRow(entry);
+  });
+
+  await workbook.xlsx.writeFile(filePath);
+  return filePath;
+};
+
+// ✅ Upload file & store metadata in MongoDB (User-Specific)
+export const uploadFile = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+    const { originalname, path, mimetype, size } = req.file;
+    const newFile = new File({
+      filename: originalname,
+      filepath: path,
+      mimetype,
+      size,
+      userId: req.user.userId, // ✅ Ensure user ownership
     });
 
-    await workbook.xlsx.writeFile(filePath);
-    return filePath;
+    await newFile.save();
+    res.status(201).json({ message: "File uploaded successfully", file: newFile });
+  } catch (error) {
+    res.status(500).json({ message: "Error uploading file", error });
+  }
 };
 
-// API Endpoint to handle file upload and analysis
-export const uploadFile = async (req, res) => {
-    try {
-        if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+// ✅ Retrieve uploaded files for a specific user
+export const getUploadedFiles = async (req, res) => {
+  try {
+    const files = await File.find({ userId: req.user.userId }).sort({ uploadedAt: -1 });
+    res.status(200).json(files);
+  } catch (error) {
+    res.status(500).json({ message: "Error retrieving files", error });
+  }
+};
 
-        const filePath = req.file.path;
-        const analyzedData = await analyzeFile(filePath);
+// ✅ Analyze the file & generate an Excel sheet
+export const analyzeAndGenerateExcel = async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    console.log("🔍 Analyzing File ID:", fileId);
 
-        // Save the extracted data as an Excel file
-        const excelFilePath = `uploads/${Date.now()}-citations.xlsx`;
-        await generateExcel(analyzedData, excelFilePath);
-
-        res.status(200).json({ message: 'File analyzed successfully', excelPath: excelFilePath });
-    } catch (error) {
-        res.status(500).json({ message: 'Error processing file', error });
+    const file = await File.findById(fileId);
+    if (!file) {
+      console.log("❌ File not found in database!");
+      return res.status(404).json({ message: "File not found" });
     }
+
+    console.log("📂 File Path:", file.filepath);
+
+    const analyzedData = await analyzeFile(file.filepath);
+    if (!analyzedData || analyzedData.length === 0) {
+      console.log("❌ No valid data found in file!");
+      return res.status(400).json({ message: "No valid data found in file" });
+    }
+
+    // ✅ Store analyzed data in MongoDB
+    file.analyzedData = analyzedData;
+    await file.save();
+    console.log("✅ Analyzed data saved to database.");
+
+    // ✅ Generate an Excel file
+    const excelFilePath = `uploads/${Date.now()}-citations.xlsx`;
+    await generateExcel(analyzedData, excelFilePath);
+    console.log("📁 Excel file generated:", excelFilePath);
+
+    res.status(200).json({
+      message: "File analyzed and Excel generated",
+      excelPath: excelFilePath,
+    });
+  } catch (error) {
+    console.error("❌ Analysis Error:", error);
+    res.status(500).json({ message: "Error analyzing file", error: error.message });
+  }
 };
+

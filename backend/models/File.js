@@ -1,10 +1,13 @@
 import mongoose from 'mongoose';
 
-const fileSchema = new mongoose.Schema({
-    filename: { type: String, required: true },
-    path: { type: String, required: true },
-    owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    uploadedAt: { type: Date, default: Date.now }
+const FileSchema = new mongoose.Schema({
+  filename: String,
+  filepath: String,
+  mimetype: String,
+  size: Number,
+  uploadedAt: { type: Date, default: Date.now },
+  analyzedData: Array, // Store extracted citations
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true }, // ✅ Associate file with user
 });
 
-export default mongoose.model('File', fileSchema);
+export default mongoose.model('File', FileSchema);
