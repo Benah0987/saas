@@ -1,12 +1,12 @@
 import React, { useState, useContext } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom"; // ✅ Import useNavigate
 import { AuthContext } from "../context/AuthContext";
 
 const Login = () => {
   const { login, error, loading } = useContext(AuthContext);
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [localError, setLocalError] = useState(null);
-  const navigate = useNavigate();
+  const navigate = useNavigate(); // ✅ Initialize navigation here
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -15,10 +15,11 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLocalError(null);
-    
+
     const response = await login(formData);
     if (response.success) {
-      navigate("/home");
+      console.log("✅ Redirecting to Home...");
+      navigate("/home"); // ✅ Navigate to Home
     } else {
       setLocalError(response.message);
     }

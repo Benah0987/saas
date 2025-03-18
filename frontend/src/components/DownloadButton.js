@@ -1,33 +1,28 @@
-import React, { useState } from 'react';
-import { useDropzone } from 'react-dropzone';
-import { uploadFile } from '../api/api';
+import React from "react";
+import { Button } from "@mui/material";
 
-const FileUpload = ({ token, onUploadSuccess }) => {
-    const [error, setError] = useState(null);
+const DownloadButton = ({ filePath }) => {
+  const handleDownload = () => {
+    if (!filePath) {
+      alert("No file available for download.");
+      return;
+    }
+    
+    // Open file in a new tab for download
+    window.open(`http://localhost:5000/${filePath}`, "_blank");
+  };
 
-    const { getRootProps, getInputProps } = useDropzone({
-        accept: '.bin',
-        onDrop: async (acceptedFiles) => {
-            setError(null);
-            if (acceptedFiles.length === 0) return;
-
-            try {
-                const response = await uploadFile(acceptedFiles[0], token);
-                console.log(response);
-                onUploadSuccess();
-            } catch (err) {
-                setError('Failed to upload file');
-            }
-        }
-    });
-
-    return (
-        <div {...getRootProps()} className="dropzone">
-            <input {...getInputProps()} />
-            <p>Drag & drop a .bin file here, or click to select one</p>
-            {error && <p className="error">{error}</p>}
-        </div>
-    );
+  return (
+    <Button 
+      variant="contained" 
+      color="secondary" 
+      style={{ marginTop: "15px" }} 
+      onClick={handleDownload}
+      disabled={!filePath}
+    >
+      Download Excel
+    </Button>
+  );
 };
 
-export default FileUpload;
+export default DownloadButton;

@@ -4,25 +4,33 @@ import React, { createContext, useState, useEffect } from "react";
 export const AuthContext = createContext();
 
 const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem("token") || null);
+  const [user, setUser] = useState(() => {
+    const savedUser = localStorage.getItem("user");
+    return savedUser ? JSON.parse(savedUser) : null;
+  });
+
+  const [token, setToken] = useState(() => localStorage.getItem("token") || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // ✅ Ensure token is set globally for all requests
-  const setAuthToken = (newToken) => {
+  // ✅ Ensure token and user data are stored persistently
+  const setAuthToken = (newToken, userData) => {
     if (newToken) {
       localStorage.setItem("token", newToken);
+      localStorage.setItem("user", JSON.stringify(userData));
       setToken(newToken);
+      setUser(userData);
     } else {
       localStorage.removeItem("token");
+      localStorage.removeItem("user");
       setToken(null);
+      setUser(null);
     }
   };
 
   // ✅ Fetch user profile on mount if token exists
   useEffect(() => {
-    if (token) {
+    if (token && !user) {
       fetchUserProfile(token);
     }
   }, [token]);
@@ -48,6 +56,7 @@ const AuthProvider = ({ children }) => {
 
       const data = await res.json();
       setUser(data);
+      localStorage.setItem("user", JSON.stringify(data)); // ✅ Store user persistently
     } catch (err) {
       console.error("❌ Error fetching user profile:", err);
       logout();
@@ -60,6 +69,7 @@ const AuthProvider = ({ children }) => {
     setError(null);
 
     try {
+      console.log("📤 Sending login request:", formData);
       const res = await fetch("http://localhost:5000/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -67,55 +77,54 @@ const AuthProvider = ({ children }) => {
       });
 
       const data = await res.json();
+      console.log("📨 Login Response:", data);
+
       if (!res.ok) throw new Error(data.message || "Login failed");
 
       console.log("🔑 Token received on login:", data.token);
-
-      setAuthToken(data.token);
-      setUser(data.user);
+      setAuthToken(data.token, data.user);
       return { success: true };
     } catch (err) {
+      console.error("❌ Login Error:", err);
       setError(err.message);
       return { success: false, message: err.message };
     } finally {
       setLoading(false);
     }
   };
+
 
   // ✅ Signup function (Redirects using window.location)
-  const signup = async (formData) => {
-    setLoading(true);
-    setError(null);
-  
-    try {
-      const res = await fetch("http://localhost:5000/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-  
-      console.log("🔄 Full Response:", res); // Log full response
-  
-      const data = await res.json();
-      console.log("📨 Response Data:", data); // Log response JSON
-  
-      if (!res.ok) throw new Error(data.message || "Signup failed");
-  
-      setAuthToken(data.token);
-      setUser(data.user);
 
-      console.log("✅ Signup successful, redirecting to login...");
-      window.location.href = "/login"; // 👈 Redirect after signup
+const signup = async (formData) => {
+  setLoading(true);
+  setError(null);
 
-      return { success: true };
-    } catch (err) {
-      console.error("❌ Signup Error:", err);
-      setError(err.message);
-      return { success: false, message: err.message };
-    } finally {
-      setLoading(false);
-    }
-  };
+  try {
+    console.log("📤 Sending signup request:", formData);
+    const res = await fetch("http://localhost:5000/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(formData),
+    });
+
+    const data = await res.json();
+    console.log("📨 Signup Response:", data);
+
+    if (!res.ok) throw new Error(data.message || "Signup failed");
+
+    console.log("✅ Signup successful, redirecting to login...");
+    window.location.href = "/login"; // Redirect after signup
+
+    return { success: true };
+  } catch (err) {
+    console.error("❌ Signup Error:", err);
+    setError(err.message);
+    return { success: false, message: err.message };
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ✅ Logout function (Redirects using window.location)
   const logout = () => {
