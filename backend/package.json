@@ -2,15 +2,19 @@
   "type": "module",
   "dependencies": {
     "bcrypt": "^5.1.1",
+    "bibtex-parse-js": "^0.0.24",
     "binary-parser": "^2.2.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
+    "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "fs": "^0.0.1-security",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.12.1",
     "multer": "^1.4.5-lts.1",
-    "xlsx": "^0.18.5"
+    "ris": "^1.0.0",
+    "xlsx": "^0.18.5",
+    "xml2js": "^0.6.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"

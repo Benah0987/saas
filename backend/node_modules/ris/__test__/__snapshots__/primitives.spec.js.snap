@@ -1,0 +1,6 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`validate should throw error with reason if data not match to scheme 1`] = `
+"Validation error: boop expected Boolean got foo
+Validation error: beep expected null got 1"
+`;
