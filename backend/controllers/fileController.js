@@ -1,18 +1,16 @@
-import risParser from '../node_modules/ris/src/index.js';
-// import ris from "ris";
 import fs from "fs";
 import path from "path";
 import bibtexParse from "bibtex-parse-js";
 import { parseString } from "xml2js";
 import excelJS from "exceljs";
-import File from "../models/File.js"; // ✅ Use the existing File.js model
+import File from "../models/File.js"; // ✅ MongoDB File model
 
 // ✅ Read uploaded file content
 const readFile = async (filePath) => {
   return fs.promises.readFile(filePath, "utf8");
 };
 
-// ✅ Function to clean parsed data
+// ✅ Clean extracted data
 const cleanParsedData = (data) => {
   if (!data || data.length === 0) return [];
   
@@ -30,6 +28,44 @@ const cleanParsedData = (data) => {
   });
 };
 
+// ✅ Function to manually parse `.ris`, `.nbib`, `.enw`
+const parseCitationFile = (content) => {
+  let entries = [];
+  let entry = {};
+
+  content.split("\n").forEach((line) => {
+    if (line.trim() === "") {
+      if (Object.keys(entry).length > 0) {
+        entries.push(entry);
+        entry = {};
+      }
+    } else {
+      const [key, value] = line.split(/[-%]\s+/); // Handles `%A` (enw) and `AU -` (nbib/ris)
+      if (key && value) {
+        const trimmedKey = key.trim();
+        const trimmedValue = value.trim();
+
+        if (trimmedKey === "A" || trimmedKey === "AU") {
+          entry.authors = entry.authors ? entry.authors + ", " + trimmedValue : trimmedValue;
+        } else if (trimmedKey === "T" || trimmedKey === "TI") {
+          entry.title = trimmedValue;
+        } else if (trimmedKey === "J" || trimmedKey === "JO") {
+          entry.journal = trimmedValue;
+        } else if (trimmedKey === "D" || trimmedKey === "PY") {
+          entry.year = trimmedValue;
+        } else if (trimmedKey === "DO" || trimmedKey === "DOI") {
+          entry.doi = trimmedValue;
+        } else {
+          entry[trimmedKey] = trimmedValue;
+        }
+      }
+    }
+  });
+
+  if (Object.keys(entry).length > 0) entries.push(entry);
+  return entries;
+};
+
 // ✅ Analyze file contents
 const analyzeFile = async (filePath) => {
   try {
@@ -40,32 +76,22 @@ const analyzeFile = async (filePath) => {
     if (ext === ".bib" || ext === ".bibtex") {
       const parsedBib = bibtexParse.toJSON(content);
       parsedData = parsedBib.map((entry) => entry.entryTags);
-    } else if (ext === ".ris") {
-      parsedData = ris.parse(content).map(entry => {
-        return {
-          title: entry.TI || "Unknown Title",
-          author: entry.AU ? entry.AU.join(", ") : "Unknown Author",
-          year: entry.Y1 || "N/A",
-          journal: entry.JO || "Unknown Source",
-          doi: entry.DOI || "No DOI"
-        };
-      });
-    } else if (ext === ".nbib" || ext === ".xml") {
+    } else if ([".ris", ".nbib", ".enw"].includes(ext)) {
+      parsedData = parseCitationFile(content);
+    } else if (ext === ".xml") {
       parsedData = await new Promise((resolve, reject) => {
         parseString(content, (err, result) => {
           if (err) reject(err);
           else resolve(result);
         });
       });
-    } else if (ext === ".txt" || ext === ".enw") {
-      parsedData = content.split("\n").map(line => ({ line }));
     } else {
       throw new Error("Unsupported file type");
     }
 
     return cleanParsedData(parsedData);
   } catch (error) {
-    console.error("Error analyzing file:", error);
+    console.error("❌ Error analyzing file:", error);
     throw new Error("Failed to analyze file");
   }
 };
@@ -73,9 +99,9 @@ const analyzeFile = async (filePath) => {
 // ✅ Generate Excel File
 const generateExcel = async (data, filePath) => {
   try {
-    const uploadsDir = path.join(path.resolve(), "uploads"); // ✅ Ensure absolute path
+    const uploadsDir = path.join(path.resolve(), "uploads");
     if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true }); // ✅ Create 'uploads' if not exists
+      fs.mkdirSync(uploadsDir, { recursive: true });
     }
 
     const workbook = new excelJS.Workbook();
@@ -85,7 +111,7 @@ const generateExcel = async (data, filePath) => {
       throw new Error("No data to generate Excel");
     }
 
-    // Extract headers dynamically
+    // ✅ Extract headers dynamically
     const headers = Object.keys(data[0]);
     worksheet.columns = headers.map((header) => ({
       header,
@@ -93,7 +119,7 @@ const generateExcel = async (data, filePath) => {
       width: 30,
     }));
 
-    // Add data rows
+    // ✅ Add data rows
     data.forEach((entry) => {
       worksheet.addRow(entry);
     });
@@ -109,7 +135,7 @@ const generateExcel = async (data, filePath) => {
   }
 };
 
-// ✅ Upload file & store metadata in MongoDB (User-Specific)
+// ✅ Upload file & store metadata in MongoDB
 export const uploadFile = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
@@ -120,7 +146,7 @@ export const uploadFile = async (req, res) => {
       filepath: path,
       mimetype,
       size,
-      userId: req.user.userId, // ✅ Ensure user ownership
+      userId: req.user.userId,
     });
 
     await newFile.save();
@@ -140,8 +166,7 @@ export const getUploadedFiles = async (req, res) => {
   }
 };
 
-// ✅ Analyze the file & generate an Excel shee
-
+// ✅ Analyze the file & generate an Excel sheet
 export const analyzeAndGenerateExcel = async (req, res) => {
   try {
     const { fileId } = req.params;
@@ -161,12 +186,10 @@ export const analyzeAndGenerateExcel = async (req, res) => {
       return res.status(400).json({ message: "No valid data found in file" });
     }
 
-    // ✅ Store analyzed data in MongoDB
     file.analyzedData = analyzedData;
     await file.save();
     console.log("✅ Analyzed data saved to database.");
 
-    // ✅ Generate an Excel file
     const excelFileName = `${Date.now()}-citations.xlsx`;
     const excelFilePath = path.join(path.resolve(), "uploads", excelFileName);
     await generateExcel(analyzedData, excelFilePath);
@@ -174,7 +197,7 @@ export const analyzeAndGenerateExcel = async (req, res) => {
 
     res.status(200).json({
       message: "File analyzed and Excel generated",
-      excelPath: `/uploads/${excelFileName}`, // ✅ Returns correct download path
+      excelPath: `/uploads/${excelFileName}`,
     });
   } catch (error) {
     console.error("❌ Analysis Error:", error);
