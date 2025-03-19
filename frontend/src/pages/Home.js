@@ -9,7 +9,7 @@ const Home = () => {
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState(null);
-  const { uploadFiles, token, user } = useContext(AuthContext); 
+  const { uploadFiles, token } = useContext(AuthContext); 
 
   // ✅ Fetch uploaded files for current user
   useEffect(() => {
@@ -39,6 +39,7 @@ const Home = () => {
     },
   });
 
+  // ✅ Upload files
   const handleUpload = async () => {
     if (files.length === 0) {
       setError("No files selected.");
@@ -70,28 +71,42 @@ const Home = () => {
     }
   };
 
-  // ✅ Function to analyze file & generate Excel
+  // ✅ Download file
+  const handleDownload = (filePath) => {
+    const fullUrl = `http://localhost:5000${filePath}`; // ✅ Ensure full URL
+    window.open(fullUrl, "_blank");
+  };
+
+  // ✅ Analyze file & generate Excel
   const handleAnalyze = async (fileId) => {
     try {
       console.log("📤 Sending analyze request for file:", fileId);
+      
+      // ✅ Send analyze request
       const response = await fetch(`http://localhost:5000/api/files/analyze/${fileId}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
       });
-  
+
       const data = await response.json();
       console.log("📨 Analyze Response:", data);
-  
+
       if (!response.ok) throw new Error(data.message || "Analysis failed");
-  
+
+      // ✅ Ensure backend returned a valid file path
+      if (!data.excelPath) {
+        throw new Error("No Excel file path returned from server");
+      }
+
+      // ✅ Download the generated Excel file
+      handleDownload(data.excelPath);
+
       alert("✅ Analysis complete! Excel file generated.");
     } catch (error) {
       console.error("❌ Error analyzing file:", error);
       alert("❌ Error analyzing file: " + error.message);
     }
   };
-  
-  
 
   return (
     <Container maxWidth="sm">
