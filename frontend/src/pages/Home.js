@@ -32,12 +32,13 @@ const Home = () => {
   }, [token]);
 
   const { getRootProps, getInputProps } = useDropzone({
-    accept: { "application/x-bibtex": [".bib"], "text/plain": [".txt"] },
+    accept: "*", // ✅ Allow all file types (no filtering)
     onDrop: (acceptedFiles) => {
       setError(null);
       setFiles(acceptedFiles);
     },
   });
+  
 
   // ✅ Upload files
   const handleUpload = async () => {
