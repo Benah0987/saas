@@ -1,8 +1,8 @@
 import risParser from '../node_modules/ris/src/index.js';
+// import ris from "ris";
 import fs from "fs";
 import path from "path";
 import bibtexParse from "bibtex-parse-js";
-// import ris from "ris"; // ✅ Corrected import
 import { parseString } from "xml2js";
 import excelJS from "exceljs";
 import File from "../models/File.js"; // ✅ Use the existing File.js model
@@ -12,57 +12,101 @@ const readFile = async (filePath) => {
   return fs.promises.readFile(filePath, "utf8");
 };
 
-// ✅ Analyze file contents
-const analyzeFile = async (filePath) => {
-  const ext = path.extname(filePath).toLowerCase();
-  const content = await readFile(filePath);
-  let parsedData = [];
-
-  if (ext === ".bib" || ext === ".bibtex") {
-    const parsedBib = bibtexParse.toJSON(content);
-    parsedData = parsedBib.map((entry) => entry.entryTags);
-  } else if (ext === ".ris") {
-    parsedData = ris.parse(content);
-  } else if (ext === ".nbib" || ext === ".xml") {
-    parsedData = await new Promise((resolve, reject) => {
-      parseString(content, (err, result) => {
-        if (err) reject(err);
-        else resolve(result);
-      });
-    });
-  } else if (ext === ".txt" || ext === ".enw") {
-    parsedData = content.split("\n");
-  } else {
-    return { message: "Unsupported file type" };
-  }
-
-  return parsedData;
+// ✅ Function to clean parsed data
+const cleanParsedData = (data) => {
+  if (!data || data.length === 0) return [];
+  
+  return data.map((entry) => {
+    let cleanedEntry = {};
+    
+    for (const key in entry) {
+      if (entry[key] && typeof entry[key] === "string") {
+        cleanedEntry[key] = entry[key].replace(/[{}"]/g, "").trim(); // Remove unnecessary brackets and quotes
+      } else {
+        cleanedEntry[key] = entry[key];
+      }
+    }
+    return cleanedEntry;
+  });
 };
 
-// ✅ Generate Excel File Dynamically
-const generateExcel = async (data, filePath) => {
-  const workbook = new excelJS.Workbook();
-  const worksheet = workbook.addWorksheet("Citations");
+// ✅ Analyze file contents
+const analyzeFile = async (filePath) => {
+  try {
+    const ext = path.extname(filePath).toLowerCase();
+    const content = await readFile(filePath);
+    let parsedData = [];
 
-  if (data.length === 0) {
-    return { message: "No data to generate Excel" };
+    if (ext === ".bib" || ext === ".bibtex") {
+      const parsedBib = bibtexParse.toJSON(content);
+      parsedData = parsedBib.map((entry) => entry.entryTags);
+    } else if (ext === ".ris") {
+      parsedData = ris.parse(content).map(entry => {
+        return {
+          title: entry.TI || "Unknown Title",
+          author: entry.AU ? entry.AU.join(", ") : "Unknown Author",
+          year: entry.Y1 || "N/A",
+          journal: entry.JO || "Unknown Source",
+          doi: entry.DOI || "No DOI"
+        };
+      });
+    } else if (ext === ".nbib" || ext === ".xml") {
+      parsedData = await new Promise((resolve, reject) => {
+        parseString(content, (err, result) => {
+          if (err) reject(err);
+          else resolve(result);
+        });
+      });
+    } else if (ext === ".txt" || ext === ".enw") {
+      parsedData = content.split("\n").map(line => ({ line }));
+    } else {
+      throw new Error("Unsupported file type");
+    }
+
+    return cleanParsedData(parsedData);
+  } catch (error) {
+    console.error("Error analyzing file:", error);
+    throw new Error("Failed to analyze file");
   }
+};
 
-  // ✅ Extract headers dynamically
-  const headers = Object.keys(data[0]);
-  worksheet.columns = headers.map((header) => ({
-    header,
-    key: header,
-    width: 30,
-  }));
+// ✅ Generate Excel File
+const generateExcel = async (data, filePath) => {
+  try {
+    const uploadsDir = path.join(path.resolve(), "uploads"); // ✅ Ensure absolute path
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true }); // ✅ Create 'uploads' if not exists
+    }
 
-  // ✅ Add data rows
-  data.forEach((entry) => {
-    worksheet.addRow(entry);
-  });
+    const workbook = new excelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Citations");
 
-  await workbook.xlsx.writeFile(filePath);
-  return filePath;
+    if (data.length === 0) {
+      throw new Error("No data to generate Excel");
+    }
+
+    // Extract headers dynamically
+    const headers = Object.keys(data[0]);
+    worksheet.columns = headers.map((header) => ({
+      header,
+      key: header,
+      width: 30,
+    }));
+
+    // Add data rows
+    data.forEach((entry) => {
+      worksheet.addRow(entry);
+    });
+
+    console.log("📁 Saving Excel file at:", filePath);
+    await workbook.xlsx.writeFile(filePath);
+    console.log("✅ Excel file generated:", filePath);
+
+    return filePath;
+  } catch (error) {
+    console.error("❌ Error generating Excel file:", error);
+    throw new Error("Failed to generate Excel file");
+  }
 };
 
 // ✅ Upload file & store metadata in MongoDB (User-Specific)
@@ -96,7 +140,8 @@ export const getUploadedFiles = async (req, res) => {
   }
 };
 
-// ✅ Analyze the file & generate an Excel sheet
+// ✅ Analyze the file & generate an Excel shee
+
 export const analyzeAndGenerateExcel = async (req, res) => {
   try {
     const { fileId } = req.params;
@@ -122,17 +167,17 @@ export const analyzeAndGenerateExcel = async (req, res) => {
     console.log("✅ Analyzed data saved to database.");
 
     // ✅ Generate an Excel file
-    const excelFilePath = `uploads/${Date.now()}-citations.xlsx`;
+    const excelFileName = `${Date.now()}-citations.xlsx`;
+    const excelFilePath = path.join(path.resolve(), "uploads", excelFileName);
     await generateExcel(analyzedData, excelFilePath);
     console.log("📁 Excel file generated:", excelFilePath);
 
     res.status(200).json({
       message: "File analyzed and Excel generated",
-      excelPath: excelFilePath,
+      excelPath: `/uploads/${excelFileName}`, // ✅ Returns correct download path
     });
   } catch (error) {
     console.error("❌ Analysis Error:", error);
     res.status(500).json({ message: "Error analyzing file", error: error.message });
   }
 };
-
