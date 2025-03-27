@@ -6,27 +6,49 @@ import excelJS from "exceljs";
 import pdfParse from "pdf-parse"; // ✅ PDF text extraction
 import { createWorker } from "tesseract.js"; // ✅ OCR for scanned PDFs
 import File from "../models/File.js"; // ✅ MongoDB File model
+import * as pdf2img from 'pdf2img';
+
+import Tesseract from 'tesseract.js';
+
+
 
 // ✅ Read uploaded file content (non-PDFs)
 const readFile = async (filePath) => {
   return fs.promises.readFile(filePath, "utf8");
 };
 
+pdf2img.convert("path/to/pdf.pdf", (err, info) => {
+  if (err) {
+    console.error("❌ Error converting PDF:", err);
+    return;
+  }
 
+  if (info.message.length > 0) {
+    const imagePath = info.message[0].path;
+    console.log(`✅ PDF converted to image: ${imagePath}`);
+
+    // Run OCR on the image
+    Tesseract.recognize(imagePath, 'eng')
+      .then(({ data: { text } }) => {
+        console.log("Extracted Text:", text);
+      })
+      .catch(err => console.error("OCR Error:", err));
+  } else {
+    console.error("❌ No images found in PDF conversion");
+  }
+});
+
+
+
+
+const filePath = path.join(process.cwd(), 'test', 'data', '05-versions-space.pdf');
 
 if (!fs.existsSync(filePath)) {
-  console.error(`❌ File not found: ${filePath}`);
-  process.exit(1); // Stop execution if file is missing
+    console.error(`❌ File not found: ${filePath}`);
+    process.exit(1); // Stop execution if file is missing
+} else {
+    console.log(`✅ File found: ${filePath}`);
 }
-
-
-// Now read the file
-const buffer = fs.readFileSync(filePath);
-console.log("✅ File loaded successfully!");
-
-
-
-const filePath = path.join(__dirname, "uploads", "05-versions-space.pdf");
 
 // ✅ Extract text from PDF (Text-Based)
 const extractTextFromPDF = async (filePath) => {
@@ -75,6 +97,24 @@ const cleanParsedData = (data) => {
     return cleanedEntry;
   });
 };
+
+pdf2img.convert(pdfPath, (err, info) => {
+  if (err) {
+      console.error("Error converting PDF:", err);
+      return;
+  }
+
+  // Use the first page image
+  const imagePath = info.message[0].path;
+  console.log(`✅ PDF converted to image: ${imagePath}`);
+
+  // Run OCR on the image
+  Tesseract.recognize(imagePath, 'eng')
+      .then(({ data: { text } }) => {
+          console.log("Extracted Text:", text);
+      })
+      .catch(err => console.error("OCR Error:", err));
+});
 
 // ✅ Function to manually parse `.ris`, `.nbib`, `.enw`
 const parseCitationFile = (content) => {
