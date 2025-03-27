@@ -1,0 +1,142 @@
+PMID- 38687700
+OWN - NLM
+STAT- MEDLINE
+DCOM- 20240430
+LR  - 20240502
+IS  - 1932-6203 (Electronic)
+IS  - 1932-6203 (Linking)
+VI  - 19
+IP  - 4
+DP  - 2024
+TI  - Detection of pathogenic bacteria in ticks from Isiolo and Kwale counties of Kenya 
+      using metagenomics.
+PG  - e0296597
+LID - 10.1371/journal.pone.0296597 [doi]
+LID - e0296597
+AB  - Ticks are arachnid ectoparasites that rank second only to mosquitoes in the 
+      transmission of human diseases including bacteria responsible for anaplasmosis, 
+      ehrlichiosis, spotted fevers, and Lyme disease among other febrile illnesses. Due 
+      to the paucity of data on bacteria transmitted by ticks in Kenya, this study 
+      undertook a bacterial metagenomic-based characterization of ticks collected from 
+      Isiolo, a semi-arid pastoralist County in Eastern Kenya, and Kwale, a coastal 
+      County with a monsoon climate in the southern Kenyan border with Tanzania. A 
+      total of 2,918 ticks belonging to 3 genera and 10 species were pooled and 
+      screened in this study. Tick identification was confirmed through the sequencing 
+      of the Cytochrome C Oxidase Subunit 1 (COI) gene. Bacterial 16S rRNA gene PCR 
+      amplicons obtained from the above samples were sequenced using the MinION (Oxford 
+      Nanopore Technologies) platform. The resulting reads were demultiplexed in 
+      Porechop, followed by trimming and filtering in Trimmomatic before clustering 
+      using Qiime2-VSearch. A SILVA database pretrained naïve Bayes classifier was used 
+      to classify the Operational Taxonomic Units (OTUs) taxonomically. The bacteria of 
+      clinical interest detected in pooled tick assays were as follows: Rickettsia spp. 
+      59.43% of pools, Coxiella burnetii 37.88%, Proteus mirabilis 5.08%, Cutibacterium 
+      acnes 6.08%, and Corynebacterium ulcerans 2.43%. These bacteria are responsible 
+      for spotted fevers, query fever (Q-fever), urinary tract infections, skin and 
+      soft tissue infections, eye infections, and diphtheria-like infections in humans, 
+      respectively. P. mirabilis, C. acnes, and C. ulcerans were detected only in 
+      Isiolo. Additionally, COI sequences allowed for the identification of Rickettsia 
+      and Coxiella species to strain levels in some of the pools. Diversity analysis 
+      revealed that the tick genera had high levels of Alpha diversity but the 
+      differences between the microbiomes of the three tick genera studied were not 
+      significant. The detection of C. acnes, commonly associated with human skin flora 
+      suggests that the ticks may have contact with humans potentially exposing them to 
+      bacterial infections. The findings in this study highlight the need for further 
+      investigation into the viability of these bacteria and the competency of ticks to 
+      transmit them. Clinicians in these high-risk areas also need to be appraised for 
+      them to include Rickettsial diseases and Q-fever as part of their differential 
+      diagnosis.
+CI  - Copyright: This is an open access article, free of all copyright, and may be 
+      freely reproduced, distributed, transmitted, modified, built upon, or otherwise 
+      used by anyone for any lawful purpose. The work is made available under the 
+      Creative Commons CC0 public domain dedication.
+FAU - Kimemia, Bryson Brian
+AU  - Kimemia BB
+AUID- ORCID: 0000-0002-4549-4484
+AD  - Department of Emerging Infectious Diseases, United States Army Medical Research 
+      Directorate-Africa (USAMRD-A), Nairobi, Kenya.
+AD  - Jomo Kenyatta University of Agriculture and Technology (JKUAT), Nairobi, Kenya.
+FAU - Musila, Lillian
+AU  - Musila L
+AD  - Department of Emerging Infectious Diseases, United States Army Medical Research 
+      Directorate-Africa (USAMRD-A), Nairobi, Kenya.
+AD  - Kenya Medical Research Institute (KEMRI), Centre for Microbiology Research, 
+      Nairobi, Kenya.
+FAU - Langat, Solomon
+AU  - Langat S
+AD  - Kenya Medical Research Institute (KEMRI), Centre for Virus Research, Nairobi, 
+      Kenya.
+FAU - Odoyo, Erick
+AU  - Odoyo E
+AD  - Department of Emerging Infectious Diseases, United States Army Medical Research 
+      Directorate-Africa (USAMRD-A), Nairobi, Kenya.
+FAU - Cinkovich, Stephanie
+AU  - Cinkovich S
+AD  - United States Armed Forces Health Surveillance Division, Global Emerging 
+      Infections Surveillance Branch, Silver Spring, Maryland, United States of 
+      America.
+FAU - Abuom, David
+AU  - Abuom D
+AD  - Department of Emerging Infectious Diseases, United States Army Medical Research 
+      Directorate-Africa (USAMRD-A), Nairobi, Kenya.
+FAU - Yalwala, Santos
+AU  - Yalwala S
+AD  - Department of Emerging Infectious Diseases, United States Army Medical Research 
+      Directorate-Africa (USAMRD-A), Nairobi, Kenya.
+FAU - Khamadi, Samoel
+AU  - Khamadi S
+AUID- ORCID: 0000-0003-3050-5977
+AD  - Kenya Medical Research Institute (KEMRI), Centre for Virus Research, Nairobi, 
+      Kenya.
+FAU - Johnson, Jaree
+AU  - Johnson J
+AD  - United States Armed Forces Pest Management Board, Silver Spring, Maryland, United 
+      States of America.
+FAU - Garges, Eric
+AU  - Garges E
+AD  - Department of Emerging Infectious Diseases, United States Army Medical Research 
+      Directorate-Africa (USAMRD-A), Nairobi, Kenya.
+FAU - Ojwang, Elly
+AU  - Ojwang E
+AD  - Department of Emerging Infectious Diseases, United States Army Medical Research 
+      Directorate-Africa (USAMRD-A), Nairobi, Kenya.
+FAU - Eyase, Fredrick
+AU  - Eyase F
+AD  - Department of Emerging Infectious Diseases, United States Army Medical Research 
+      Directorate-Africa (USAMRD-A), Nairobi, Kenya.
+AD  - Kenya Medical Research Institute (KEMRI), Centre for Virus Research, Nairobi, 
+      Kenya.
+LA  - eng
+PT  - Journal Article
+PT  - Research Support, Non-U.S. Gov't
+DEP - 20240430
+PL  - United States
+TA  - PLoS One
+JT  - PloS one
+JID - 101285081
+RN  - 0 (RNA, Ribosomal, 16S)
+SB  - IM
+MH  - Kenya
+MH  - Animals
+MH  - *Metagenomics/methods
+MH  - *Ticks/microbiology
+MH  - *RNA, Ribosomal, 16S/genetics
+MH  - *Bacteria/genetics/isolation & purification/classification
+MH  - Humans
+MH  - Phylogeny
+PMC - PMC11060535
+COIS- The authors have declared that no competing interests exist.
+EDAT- 2024/04/30 18:49
+MHDA- 2024/04/30 18:50
+PMCR- 2024/04/30
+CRDT- 2024/04/30 13:23
+PHST- 2023/12/19 00:00 [received]
+PHST- 2024/04/09 00:00 [accepted]
+PHST- 2024/04/30 18:50 [medline]
+PHST- 2024/04/30 18:49 [pubmed]
+PHST- 2024/04/30 13:23 [entrez]
+PHST- 2024/04/30 00:00 [pmc-release]
+AID - PONE-D-23-42435 [pii]
+AID - 10.1371/journal.pone.0296597 [doi]
+PST - epublish
+SO  - PLoS One. 2024 Apr 30;19(4):e0296597. doi: 10.1371/journal.pone.0296597. 
+      eCollection 2024.

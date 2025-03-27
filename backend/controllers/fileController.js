@@ -3,20 +3,68 @@ import path from "path";
 import bibtexParse from "bibtex-parse-js";
 import { parseString } from "xml2js";
 import excelJS from "exceljs";
+import pdfParse from "pdf-parse"; // ✅ PDF text extraction
+import { createWorker } from "tesseract.js"; // ✅ OCR for scanned PDFs
 import File from "../models/File.js"; // ✅ MongoDB File model
 
-// ✅ Read uploaded file content
+// ✅ Read uploaded file content (non-PDFs)
 const readFile = async (filePath) => {
   return fs.promises.readFile(filePath, "utf8");
+};
+
+
+
+if (!fs.existsSync(filePath)) {
+  console.error(`❌ File not found: ${filePath}`);
+  process.exit(1); // Stop execution if file is missing
+}
+
+
+// Now read the file
+const buffer = fs.readFileSync(filePath);
+console.log("✅ File loaded successfully!");
+
+
+
+const filePath = path.join(__dirname, "uploads", "05-versions-space.pdf");
+
+// ✅ Extract text from PDF (Text-Based)
+const extractTextFromPDF = async (filePath) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`❌ PDF file not found: ${filePath}`);
+    }
+    
+    const buffer = await fs.promises.readFile(filePath);
+    const data = await pdfParse(buffer);
+    return data.text.trim();
+  } catch (error) {
+    console.error("❌ Error extracting text from PDF:", error);
+    return null;
+  }
+};
+
+
+// ✅ Extract text from Scanned PDF using OCR
+const extractTextFromScannedPDF = async (filePath) => {
+  try {
+    console.log("🔍 Running OCR on scanned PDF...");
+    const worker = await createWorker("eng"); // OCR for English
+    const { data } = await worker.recognize(filePath);
+    await worker.terminate();
+    return data.text.trim();
+  } catch (error) {
+    console.error("❌ OCR failed:", error);
+    return null;
+  }
 };
 
 // ✅ Clean extracted data
 const cleanParsedData = (data) => {
   if (!data || data.length === 0) return [];
-  
+
   return data.map((entry) => {
     let cleanedEntry = {};
-    
     for (const key in entry) {
       if (entry[key] && typeof entry[key] === "string") {
         cleanedEntry[key] = entry[key].replace(/[{}"]/g, "").trim(); // Remove unnecessary brackets and quotes
@@ -70,7 +118,7 @@ const parseCitationFile = (content) => {
 const analyzeFile = async (filePath) => {
   try {
     const ext = path.extname(filePath).toLowerCase();
-    const content = await readFile(filePath);
+    let content = ext !== ".pdf" ? await readFile(filePath) : "";
     let parsedData = [];
 
     if (ext === ".bib" || ext === ".bibtex") {
@@ -85,6 +133,16 @@ const analyzeFile = async (filePath) => {
           else resolve(result);
         });
       });
+    } else if (ext === ".pdf") {
+      let extractedText = await extractTextFromPDF(filePath);
+
+      // ✅ If no text found, try OCR
+      if (!extractedText.trim()) {
+        console.log("🔍 No text found in PDF, trying OCR...");
+        extractedText = await extractTextFromScannedPDF(filePath);
+      }
+
+      parsedData = extractedText ? [{ content: extractedText }] : [];
     } else {
       throw new Error("Unsupported file type");
     }
@@ -98,41 +156,34 @@ const analyzeFile = async (filePath) => {
 
 // ✅ Generate Excel File
 const generateExcel = async (data, filePath) => {
-  try {
-    const uploadsDir = path.join(path.resolve(), "uploads");
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
+  const workbook = new excelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Extracted Data");
 
-    const workbook = new excelJS.Workbook();
-    const worksheet = workbook.addWorksheet("Citations");
-
-    if (data.length === 0) {
-      throw new Error("No data to generate Excel");
-    }
-
-    // ✅ Extract headers dynamically
-    const headers = Object.keys(data[0]);
-    worksheet.columns = headers.map((header) => ({
-      header,
-      key: header,
-      width: 30,
-    }));
-
-    // ✅ Add data rows
-    data.forEach((entry) => {
-      worksheet.addRow(entry);
-    });
-
-    console.log("📁 Saving Excel file at:", filePath);
-    await workbook.xlsx.writeFile(filePath);
-    console.log("✅ Excel file generated:", filePath);
-
-    return filePath;
-  } catch (error) {
-    console.error("❌ Error generating Excel file:", error);
-    throw new Error("Failed to generate Excel file");
+  if (data.length === 0) {
+    throw new Error("No data to generate Excel");
   }
+
+  // ✅ Extract headers dynamically
+  const headers = Object.keys(data[0]);
+
+  worksheet.columns = headers.map((header) => ({
+    header,
+    key: header,
+    width: 30,
+  }));
+
+  // ✅ Make headers bold
+  worksheet.getRow(1).eachCell((cell) => {
+    cell.font = { bold: true };
+  });
+
+  // ✅ Add data rows
+  data.forEach((entry) => {
+    worksheet.addRow(entry);
+  });
+
+  await workbook.xlsx.writeFile(filePath);
+  return filePath;
 };
 
 // ✅ Upload file & store metadata in MongoDB
@@ -156,16 +207,6 @@ export const uploadFile = async (req, res) => {
   }
 };
 
-// ✅ Retrieve uploaded files for a specific user
-export const getUploadedFiles = async (req, res) => {
-  try {
-    const files = await File.find({ userId: req.user.userId }).sort({ uploadedAt: -1 });
-    res.status(200).json(files);
-  } catch (error) {
-    res.status(500).json({ message: "Error retrieving files", error });
-  }
-};
-
 // ✅ Analyze the file & generate an Excel sheet
 export const analyzeAndGenerateExcel = async (req, res) => {
   try {
@@ -173,34 +214,32 @@ export const analyzeAndGenerateExcel = async (req, res) => {
     console.log("🔍 Analyzing File ID:", fileId);
 
     const file = await File.findById(fileId);
-    if (!file) {
-      console.log("❌ File not found in database!");
-      return res.status(404).json({ message: "File not found" });
-    }
-
-    console.log("📂 File Path:", file.filepath);
+    if (!file) return res.status(404).json({ message: "File not found" });
 
     const analyzedData = await analyzeFile(file.filepath);
-    if (!analyzedData || analyzedData.length === 0) {
-      console.log("❌ No valid data found in file!");
-      return res.status(400).json({ message: "No valid data found in file" });
-    }
+    if (!analyzedData.length) return res.status(400).json({ message: "No valid data found in file" });
 
     file.analyzedData = analyzedData;
     await file.save();
-    console.log("✅ Analyzed data saved to database.");
 
     const excelFileName = `${Date.now()}-citations.xlsx`;
-    const excelFilePath = path.join(path.resolve(), "uploads", excelFileName);
+    const excelFilePath = path.join("uploads", excelFileName);
     await generateExcel(analyzedData, excelFilePath);
-    console.log("📁 Excel file generated:", excelFilePath);
 
-    res.status(200).json({
-      message: "File analyzed and Excel generated",
-      excelPath: `/uploads/${excelFileName}`,
-    });
+    res.status(200).json({ message: "File analyzed and Excel generated", excelPath: `/uploads/${excelFileName}` });
   } catch (error) {
-    console.error("❌ Analysis Error:", error);
     res.status(500).json({ message: "Error analyzing file", error: error.message });
   }
 };
+
+// ✅ Retrieve uploaded files for a specific user
+export const getUploadedFiles = async (req, res) => {
+  try {
+    const files = await File.find({ userId: req.user.userId }).sort({ uploadedAt: -1 });
+    res.status(200).json(files);
+  } catch (error) {
+    console.error("❌ Error retrieving files:", error);
+    res.status(500).json({ message: "Error retrieving files", error: error.message });
+  }
+};
+
