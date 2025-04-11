@@ -1,12 +1,14 @@
 import React, { useState, useContext } from "react";
-import { useNavigate } from "react-router-dom"; // ✅ Import useNavigate
+import { useNavigate } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
+import { TextField, Button, Container, Typography, Paper, Box, CircularProgress, Grow } from "@mui/material";
+import logo from "../assets/main-logo.svg"; // ✅ Updated logo path
 
 const Login = () => {
   const { login, error, loading } = useContext(AuthContext);
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [localError, setLocalError] = useState(null);
-  const navigate = useNavigate(); // ✅ Initialize navigation here
+  const navigate = useNavigate();
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -18,24 +20,63 @@ const Login = () => {
 
     const response = await login(formData);
     if (response.success) {
-      console.log("✅ Redirecting to Home...");
-      navigate("/home"); // ✅ Navigate to Home
+      navigate("/home");
     } else {
       setLocalError(response.message);
     }
   };
 
   return (
-    <div className="container">
-      <h2>Login</h2>
-      {localError && <p className="error-message">{localError}</p>}
-      {error && <p className="error-message">{error}</p>}
-      <form onSubmit={handleSubmit}>
-        <input type="email" name="email" placeholder="Email" onChange={handleChange} required />
-        <input type="password" name="password" placeholder="Password" onChange={handleChange} required />
-        <button type="submit" disabled={loading}>{loading ? "Logging in..." : "Login"}</button>
-      </form>
-    </div>
+    <Grow in timeout={700}>
+      <Container maxWidth="xs">
+        <Paper elevation={5} sx={{ padding: 4, textAlign: "center", marginTop: 5, borderRadius: 3 }}>
+          
+          {/* ✅ Logo Section */}
+          <Box 
+            component="img" 
+            src={logo} 
+            alt="Main Logo" 
+            sx={{ width: "100%", maxWidth: "150px", margin: "0 auto 15px", display: "block" }} 
+          />
+
+          <Typography variant="h4" sx={{ marginBottom: 2, color: "primary.main" }}>
+            Login
+          </Typography>
+
+          {localError && <Typography color="error">{localError}</Typography>}
+          {error && <Typography color="error">{error}</Typography>}
+
+          <Box component="form" onSubmit={handleSubmit} sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <TextField label="Email" name="email" type="email" variant="outlined" fullWidth required value={formData.email} onChange={handleChange} />
+            <TextField label="Password" name="password" type="password" variant="outlined" fullWidth required value={formData.password} onChange={handleChange} />
+
+            <Button
+              type="submit"
+              variant="contained"
+              color="primary"
+              fullWidth
+              sx={{
+                padding: "12px",
+                fontSize: "16px",
+                fontWeight: "bold",
+                transition: "all 0.3s ease-in-out",
+                "&:hover": { backgroundColor: "secondary.main", transform: "scale(1.05)" },
+              }}
+              disabled={loading}
+            >
+              {loading ? <CircularProgress size={24} color="inherit" /> : "Login"}
+            </Button>
+          </Box>
+
+          <Typography variant="body2" sx={{ marginTop: 2 }}>
+            Don't have an account?{" "}
+            <a href="/signup" style={{ color: "#0066ff", textDecoration: "none", fontWeight: "bold" }}>
+              Sign Up
+            </a>
+          </Typography>
+        </Paper>
+      </Container>
+    </Grow>
   );
 };
 

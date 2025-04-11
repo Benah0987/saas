@@ -1,17 +1,18 @@
 import React from "react";
-import ReactDOM from "react-dom/client";
+import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import AuthProvider from "./context/AuthContext"; // ✅ Ensure correct path
 import "./index.css";
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
+const root = createRoot(document.getElementById("root")); // ✅ React 18 Best Practice
+
 root.render(
   <React.StrictMode>
-    <AuthProvider> 
-      <BrowserRouter>
+    <BrowserRouter> {/* ✅ Place BrowserRouter outside AuthProvider */}
+      <AuthProvider>
         <App />
-      </BrowserRouter>
-    </AuthProvider>
+      </AuthProvider>
+    </BrowserRouter>
   </React.StrictMode>
 );

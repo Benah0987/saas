@@ -9,10 +9,12 @@ import Navbar from "./pages/Navbar"; // ✅ Ensure correct import
 function App() {
   const location = useLocation();
 
+  // ✅ Show Navbar on both "Home" & "Profile" pages
+  const showNavbar = location.pathname === "/home" || location.pathname === "/profile";
+
   return (
     <>
-      {/* ✅ Show Navbar only on /home */}
-      {location.pathname === "/home" && <Navbar />} 
+      {showNavbar && <Navbar />} {/* ✅ Navbar now shows on both pages */}
 
       <Routes>
         <Route path="/" element={<Signup />} />
