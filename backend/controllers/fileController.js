@@ -6,6 +6,9 @@ import excelJS from "exceljs";
 import pdfParse from "pdf-parse";
 import { createWorker } from "tesseract.js";
 import File from "../models/File.js";
+// import pdfImgConvert from "pdf-img-convert";
+import { exec } from 'child_process';
+
 // const pdfImgConvert = await import("pdf-img-convert");
 
 
@@ -55,31 +58,49 @@ const extractTextFromPDF = async (filePath) => {
 };
 
 // OCR scanned PDF
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+
+// OCR scanned PDF
+import { promisify } from 'util';
+const execPromise = promisify(exec);
+
 const extractTextFromScannedPDF = async (filePath) => {
   try {
-    const images = await pdfImgConvert.convert(filePath, {
-      width: 2000,
-      height: 2000,
-      base64: false
+    // Get the directory name using import.meta.url
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const outputImagePath = path.join(__dirname, 'temp_image.png');
+    const command = `pdftoppm -png -f 1 -l 1 "${filePath}" "${outputImagePath.replace('.png', '')}"`;
+    await execPromise(command);
+    console.log(`✅ PDF converted to image: ${outputImagePath}`);
+    return await performOCR(outputImagePath);
+  } catch (error) {
+    console.error('❌ OCR PDF conversion failed:', error);
+    return null;
+  }
+};
+// Example OCR function (using Tesseract.js)
+const performOCR = async (imagePath) => {
+  try {
+    const worker = await createWorker({
+      logger: m => console.log(m) // Optional: for logging progress
     });
     
-    if (!images.length) throw new Error("❌ No images generated from PDF");
-
-    // Save first page temporarily
-    const imagePath = "./temp/ocr_page.png";
-    fs.writeFileSync(imagePath, images[0]);
-
-    console.log(`✅ OCR Image: ${imagePath}`);
-
-    // Perform OCR
-    const worker = await createWorker("eng");
+    // Modern Tesseract.js versions use this syntax:
+    await worker.load();
+    await worker.initialize('eng');
+    
     const { data: { text } } = await worker.recognize(imagePath);
     await worker.terminate();
-
-    fs.unlinkSync(imagePath); // Clean up
+    
+    // Clean up the temporary image file
+    fs.unlinkSync(imagePath);
     return text.trim();
   } catch (error) {
-    console.error("❌ OCR failed:", error);
+    console.error('❌ OCR failed:', error);
+    // Ensure we clean up even if OCR fails
+    if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
     return null;
   }
 };
@@ -219,9 +240,10 @@ const analyzeFile = async (filePath) => {
         parseString(content, (err, result) => err ? reject(err) : resolve(result));
       });
     } else if (ext === ".pdf") {
+      // First attempt to extract text from the PDF
       let text = await extractTextFromPDF(filePath);
       
-      // If no text found, try OCR
+      // If no text found, attempt OCR
       if (!text?.trim()) {
         console.log("🔍 No text found, attempting OCR...");
         text = await extractTextFromScannedPDF(filePath);
@@ -244,6 +266,7 @@ const analyzeFile = async (filePath) => {
     throw new Error("Failed to analyze file");
   }
 };
+
 
 // ========================
 // EXCEL GENERATION
