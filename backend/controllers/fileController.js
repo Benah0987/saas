@@ -6,9 +6,30 @@ import excelJS from "exceljs";
 import pdfParse from "pdf-parse";
 import { createWorker } from "tesseract.js";
 import File from "../models/File.js";
-import pdf2image from "pdf2image";
+// const pdfImgConvert = await import("pdf-img-convert");
 
-// ✅ Config for image conversion
+
+// ========================
+// SECTION CONFIGURATION
+// ========================
+const SECTION_HEADINGS = {
+  contact: /^(contact information|contact details|personal information|phone|email|address)$/i,
+  summary: /^(summary|professional summary|profile|about me)$/i,
+  experience: /^(work experience|employment history|experience|professional experience)$/i,
+  skills: /^(skills|technical skills|key skills|competencies)$/i,
+  education: /^(education|academic background|qualifications)$/i,
+  projects: /^(projects|key projects|selected projects)$/i,
+  certifications: /^(certifications|licenses|certificate)$/i,
+  awards: /^(awards|honors|achievements|recognitions)$/i,
+  languages: /^(languages|language proficiency)$/i,
+  volunteer: /^(volunteer work|volunteering)$/i,
+};
+
+// ========================
+// FILE PROCESSING CORE
+// ========================
+
+// Config for image conversion
 const pdf2imageOptions = {
   density: 300,
   saveFilename: "page",
@@ -18,10 +39,10 @@ const pdf2imageOptions = {
   height: 2000
 };
 
-// ✅ Read non-PDF file
+// Read non-PDF file
 const readFile = async (filePath) => fs.promises.readFile(filePath, "utf8");
 
-// ✅ Extract text from a normal PDF
+// Extract text from a normal PDF
 const extractTextFromPDF = async (filePath) => {
   try {
     const buffer = await fs.promises.readFile(filePath);
@@ -33,20 +54,27 @@ const extractTextFromPDF = async (filePath) => {
   }
 };
 
-// ✅ OCR scanned PDF
+// OCR scanned PDF
 const extractTextFromScannedPDF = async (filePath) => {
   try {
-    const images = await pdf2image.convert(filePath, pdf2imageOptions);
+    const images = await pdfImgConvert.convert(filePath, {
+      width: 2000,
+      height: 2000,
+      base64: false
+    });
+    
     if (!images.length) throw new Error("❌ No images generated from PDF");
 
-    const imagePath = images[0].path;
+    // Save first page temporarily
+    const imagePath = "./temp/ocr_page.png";
+    fs.writeFileSync(imagePath, images[0]);
+
     console.log(`✅ OCR Image: ${imagePath}`);
 
-    const { data: { text } } = await createWorker("eng").then(async (worker) => {
-      const result = await worker.recognize(imagePath);
-      await worker.terminate();
-      return result;
-    });
+    // Perform OCR
+    const worker = await createWorker("eng");
+    const { data: { text } } = await worker.recognize(imagePath);
+    await worker.terminate();
 
     fs.unlinkSync(imagePath); // Clean up
     return text.trim();
@@ -56,7 +84,82 @@ const extractTextFromScannedPDF = async (filePath) => {
   }
 };
 
-// ✅ Clean parsed citation data
+// ========================
+// RESUME PARSING LOGIC
+// ========================
+
+/**
+ * Parses raw text into structured resume sections
+ */
+function parseResumeSections(rawText) {
+  const lines = rawText.split('\n').filter(line => line.trim());
+  const sections = {};
+  let currentSection = null;
+
+  for (const line of lines) {
+    // Check for section headings
+    let isHeading = false;
+    for (const [sectionName, regex] of Object.entries(SECTION_HEADINGS)) {
+      if (regex.test(line)) {
+        currentSection = sectionName;
+        sections[currentSection] = [];
+        isHeading = true;
+        break;
+      }
+    }
+
+    // Add content to current section
+    if (!isHeading && currentSection) {
+      sections[currentSection].push(line.trim());
+    }
+  }
+
+  return sections;
+}
+
+/**
+ * Cleans and formats parsed sections
+ */
+function formatResumeSections(rawSections) {
+  const formatted = {};
+
+  // Special handling for experience (split by dates)
+  if (rawSections.experience) {
+    formatted.experience = rawSections.experience.join('\n')
+      .split(/(?=\d{4} - \d{4}|Present|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i)
+      .filter(entry => entry.trim());
+  }
+
+  // Format skills list
+  if (rawSections.skills) {
+    formatted.skills = rawSections.skills.join(' ')
+      .split(/[,•·]|\n/)
+      .map(skill => skill.trim())
+      .filter(Boolean);
+  }
+
+  // Format education (degree-focused)
+  if (rawSections.education) {
+    formatted.education = rawSections.education.join('\n')
+      .split(/(?=\b(B\.|Bachelor|M\.|Master|Ph\.D|Diploma)\b)/i)
+      .filter(entry => entry.trim());
+  }
+
+  // Other sections (keep as-is)
+  Object.keys(rawSections).forEach(section => {
+    if (!formatted[section]) {
+      formatted[section] = rawSections[section].join('\n');
+    }
+  });
+
+  return formatted;
+}
+
+// ========================
+// CITATION & GENERAL FILE PROCESSING
+// ========================
+
+// Clean parsed citation data
 const cleanParsedData = (data) => {
   return data.map(entry => {
     let cleaned = {};
@@ -70,7 +173,7 @@ const cleanParsedData = (data) => {
   });
 };
 
-// ✅ Parse .ris, .nbib, .enw files
+// Parse .ris, .nbib, .enw files
 const parseCitationFile = (content) => {
   let entries = [], entry = {};
   content.split("\n").forEach(line => {
@@ -96,7 +199,10 @@ const parseCitationFile = (content) => {
   return entries;
 };
 
-// ✅ Main file analysis logic
+// ========================
+// MAIN FILE ANALYSIS
+// ========================
+
 const analyzeFile = async (filePath) => {
   try {
     const ext = path.extname(filePath).toLowerCase();
@@ -114,11 +220,20 @@ const analyzeFile = async (filePath) => {
       });
     } else if (ext === ".pdf") {
       let text = await extractTextFromPDF(filePath);
-      if (!text.trim()) {
+      
+      // If no text found, try OCR
+      if (!text?.trim()) {
         console.log("🔍 No text found, attempting OCR...");
         text = await extractTextFromScannedPDF(filePath);
       }
-      parsedData = text ? [{ content: text }] : [];
+
+      // For resumes, parse into structured sections
+      if (text) {
+        const rawSections = parseResumeSections(text);
+        parsedData = [formatResumeSections(rawSections)];
+      } else {
+        parsedData = [];
+      }
     } else {
       throw new Error("Unsupported file type");
     }
@@ -130,32 +245,64 @@ const analyzeFile = async (filePath) => {
   }
 };
 
-// ✅ Excel generation
+// ========================
+// EXCEL GENERATION
+// ========================
+
 const generateExcel = async (data, filePath) => {
   if (!data.length) throw new Error("No data to generate Excel");
 
   const workbook = new excelJS.Workbook();
   const worksheet = workbook.addWorksheet("Extracted Data");
 
-  worksheet.columns = Object.keys(data[0]).map(header => ({
-    header,
-    key: header,
-    width: 30
-  }));
+  // Handle both resume and citation data formats
+  if (data[0].content || data[0].section) {
+    // Resume-style structured data
+    worksheet.columns = [
+      { header: 'Section', key: 'section', width: 20 },
+      { header: 'Content', key: 'content', width: 80 }
+    ];
 
+    data.forEach(item => {
+      if (Array.isArray(item.content)) {
+        item.content.forEach(contentItem => {
+          worksheet.addRow({ section: item.section, content: contentItem });
+        });
+      } else {
+        worksheet.addRow(item);
+      }
+    });
+  } else {
+    // Citation-style data
+    worksheet.columns = Object.keys(data[0]).map(header => ({
+      header,
+      key: header,
+      width: 30
+    }));
+
+    data.forEach(entry => {
+      worksheet.addRow(entry);
+    });
+  }
+
+  // Style headers
   worksheet.getRow(1).eachCell(cell => {
     cell.font = { bold: true };
-  });
-
-  data.forEach(entry => {
-    worksheet.addRow(entry);
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFD3D3D3' }
+    };
   });
 
   await workbook.xlsx.writeFile(filePath);
   return filePath;
 };
 
-// ✅ Upload and save file metadata
+// ========================
+// CONTROLLER FUNCTIONS
+// ========================
+
 export const uploadFile = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
@@ -176,7 +323,6 @@ export const uploadFile = async (req, res) => {
   }
 };
 
-// ✅ Analyze uploaded file and export to Excel
 export const analyzeAndGenerateExcel = async (req, res) => {
   try {
     const { fileId } = req.params;
@@ -189,17 +335,23 @@ export const analyzeAndGenerateExcel = async (req, res) => {
     file.analyzedData = analyzedData;
     await file.save();
 
-    const excelFileName = `${Date.now()}-citations.xlsx`;
+    const excelFileName = `${Date.now()}-extracted.xlsx`;
     const excelFilePath = path.join("uploads", excelFileName);
     await generateExcel(analyzedData, excelFilePath);
 
-    res.status(200).json({ message: "Excel generated", excelPath: `/uploads/${excelFileName}` });
+    res.status(200).json({ 
+      message: "Excel generated successfully",
+      excelPath: `/uploads/${excelFileName}`,
+      structuredData: analyzedData 
+    });
   } catch (error) {
-    res.status(500).json({ message: "Failed to analyze or export file", error: error.message });
+    res.status(500).json({ 
+      message: "Failed to analyze or export file", 
+      error: error.message 
+    });
   }
 };
 
-// ✅ Get user-uploaded files
 export const getUploadedFiles = async (req, res) => {
   try {
     const files = await File.find({ userId: req.user.userId }).sort({ uploadedAt: -1 });
