@@ -3,60 +3,27 @@ import path from "path";
 import bibtexParse from "bibtex-parse-js";
 import { parseString } from "xml2js";
 import excelJS from "exceljs";
-import pdfParse from "pdf-parse"; // ✅ PDF text extraction
-import { createWorker } from "tesseract.js"; // ✅ OCR for scanned PDFs
-import File from "../models/File.js"; // ✅ MongoDB File model
-import * as pdf2img from 'pdf2img';
+import pdfParse from "pdf-parse";
+import { createWorker } from "tesseract.js";
+import File from "../models/File.js";
+import pdf2image from "pdf2image";
 
-import Tesseract from 'tesseract.js';
-
-
-
-// ✅ Read uploaded file content (non-PDFs)
-const readFile = async (filePath) => {
-  return fs.promises.readFile(filePath, "utf8");
+// ✅ Config for image conversion
+const pdf2imageOptions = {
+  density: 300,
+  saveFilename: "page",
+  savePath: "./temp",
+  format: "png",
+  width: 2000,
+  height: 2000
 };
 
-pdf2img.convert("path/to/pdf.pdf", (err, info) => {
-  if (err) {
-    console.error("❌ Error converting PDF:", err);
-    return;
-  }
+// ✅ Read non-PDF file
+const readFile = async (filePath) => fs.promises.readFile(filePath, "utf8");
 
-  if (info.message.length > 0) {
-    const imagePath = info.message[0].path;
-    console.log(`✅ PDF converted to image: ${imagePath}`);
-
-    // Run OCR on the image
-    Tesseract.recognize(imagePath, 'eng')
-      .then(({ data: { text } }) => {
-        console.log("Extracted Text:", text);
-      })
-      .catch(err => console.error("OCR Error:", err));
-  } else {
-    console.error("❌ No images found in PDF conversion");
-  }
-});
-
-
-
-
-const filePath = path.join(process.cwd(), 'test', 'data', '05-versions-space.pdf');
-
-if (!fs.existsSync(filePath)) {
-    console.error(`❌ File not found: ${filePath}`);
-    process.exit(1); // Stop execution if file is missing
-} else {
-    console.log(`✅ File found: ${filePath}`);
-}
-
-// ✅ Extract text from PDF (Text-Based)
+// ✅ Extract text from a normal PDF
 const extractTextFromPDF = async (filePath) => {
   try {
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`❌ PDF file not found: ${filePath}`);
-    }
-    
     const buffer = await fs.promises.readFile(filePath);
     const data = await pdfParse(buffer);
     return data.text.trim();
@@ -66,159 +33,121 @@ const extractTextFromPDF = async (filePath) => {
   }
 };
 
-
-// ✅ Extract text from Scanned PDF using OCR
+// ✅ OCR scanned PDF
 const extractTextFromScannedPDF = async (filePath) => {
   try {
-    console.log("🔍 Running OCR on scanned PDF...");
-    const worker = await createWorker("eng"); // OCR for English
-    const { data } = await worker.recognize(filePath);
-    await worker.terminate();
-    return data.text.trim();
+    const images = await pdf2image.convert(filePath, pdf2imageOptions);
+    if (!images.length) throw new Error("❌ No images generated from PDF");
+
+    const imagePath = images[0].path;
+    console.log(`✅ OCR Image: ${imagePath}`);
+
+    const { data: { text } } = await createWorker("eng").then(async (worker) => {
+      const result = await worker.recognize(imagePath);
+      await worker.terminate();
+      return result;
+    });
+
+    fs.unlinkSync(imagePath); // Clean up
+    return text.trim();
   } catch (error) {
     console.error("❌ OCR failed:", error);
     return null;
   }
 };
 
-// ✅ Clean extracted data
+// ✅ Clean parsed citation data
 const cleanParsedData = (data) => {
-  if (!data || data.length === 0) return [];
-
-  return data.map((entry) => {
-    let cleanedEntry = {};
+  return data.map(entry => {
+    let cleaned = {};
     for (const key in entry) {
-      if (entry[key] && typeof entry[key] === "string") {
-        cleanedEntry[key] = entry[key].replace(/[{}"]/g, "").trim(); // Remove unnecessary brackets and quotes
-      } else {
-        cleanedEntry[key] = entry[key];
-      }
+      const value = entry[key];
+      cleaned[key] = typeof value === "string"
+        ? value.replace(/[{}"]/g, "").trim()
+        : value;
     }
-    return cleanedEntry;
+    return cleaned;
   });
 };
 
-pdf2img.convert(pdfPath, (err, info) => {
-  if (err) {
-      console.error("Error converting PDF:", err);
-      return;
-  }
-
-  // Use the first page image
-  const imagePath = info.message[0].path;
-  console.log(`✅ PDF converted to image: ${imagePath}`);
-
-  // Run OCR on the image
-  Tesseract.recognize(imagePath, 'eng')
-      .then(({ data: { text } }) => {
-          console.log("Extracted Text:", text);
-      })
-      .catch(err => console.error("OCR Error:", err));
-});
-
-// ✅ Function to manually parse `.ris`, `.nbib`, `.enw`
+// ✅ Parse .ris, .nbib, .enw files
 const parseCitationFile = (content) => {
-  let entries = [];
-  let entry = {};
-
-  content.split("\n").forEach((line) => {
-    if (line.trim() === "") {
-      if (Object.keys(entry).length > 0) {
+  let entries = [], entry = {};
+  content.split("\n").forEach(line => {
+    if (!line.trim()) {
+      if (Object.keys(entry).length) {
         entries.push(entry);
         entry = {};
       }
     } else {
-      const [key, value] = line.split(/[-%]\s+/); // Handles `%A` (enw) and `AU -` (nbib/ris)
+      const [key, value] = line.split(/[-%]\s+/);
       if (key && value) {
-        const trimmedKey = key.trim();
-        const trimmedValue = value.trim();
-
-        if (trimmedKey === "A" || trimmedKey === "AU") {
-          entry.authors = entry.authors ? entry.authors + ", " + trimmedValue : trimmedValue;
-        } else if (trimmedKey === "T" || trimmedKey === "TI") {
-          entry.title = trimmedValue;
-        } else if (trimmedKey === "J" || trimmedKey === "JO") {
-          entry.journal = trimmedValue;
-        } else if (trimmedKey === "D" || trimmedKey === "PY") {
-          entry.year = trimmedValue;
-        } else if (trimmedKey === "DO" || trimmedKey === "DOI") {
-          entry.doi = trimmedValue;
-        } else {
-          entry[trimmedKey] = trimmedValue;
-        }
+        const k = key.trim(), v = value.trim();
+        if (["A", "AU"].includes(k)) entry.authors = entry.authors ? entry.authors + ", " + v : v;
+        else if (["T", "TI"].includes(k)) entry.title = v;
+        else if (["J", "JO"].includes(k)) entry.journal = v;
+        else if (["D", "PY"].includes(k)) entry.year = v;
+        else if (["DO", "DOI"].includes(k)) entry.doi = v;
+        else entry[k] = v;
       }
     }
   });
-
-  if (Object.keys(entry).length > 0) entries.push(entry);
+  if (Object.keys(entry).length) entries.push(entry);
   return entries;
 };
 
-// ✅ Analyze file contents
+// ✅ Main file analysis logic
 const analyzeFile = async (filePath) => {
   try {
     const ext = path.extname(filePath).toLowerCase();
     let content = ext !== ".pdf" ? await readFile(filePath) : "";
     let parsedData = [];
 
-    if (ext === ".bib" || ext === ".bibtex") {
+    if ([".bib", ".bibtex"].includes(ext)) {
       const parsedBib = bibtexParse.toJSON(content);
-      parsedData = parsedBib.map((entry) => entry.entryTags);
+      parsedData = parsedBib.map(entry => entry.entryTags);
     } else if ([".ris", ".nbib", ".enw"].includes(ext)) {
       parsedData = parseCitationFile(content);
     } else if (ext === ".xml") {
       parsedData = await new Promise((resolve, reject) => {
-        parseString(content, (err, result) => {
-          if (err) reject(err);
-          else resolve(result);
-        });
+        parseString(content, (err, result) => err ? reject(err) : resolve(result));
       });
     } else if (ext === ".pdf") {
-      let extractedText = await extractTextFromPDF(filePath);
-
-      // ✅ If no text found, try OCR
-      if (!extractedText.trim()) {
-        console.log("🔍 No text found in PDF, trying OCR...");
-        extractedText = await extractTextFromScannedPDF(filePath);
+      let text = await extractTextFromPDF(filePath);
+      if (!text.trim()) {
+        console.log("🔍 No text found, attempting OCR...");
+        text = await extractTextFromScannedPDF(filePath);
       }
-
-      parsedData = extractedText ? [{ content: extractedText }] : [];
+      parsedData = text ? [{ content: text }] : [];
     } else {
       throw new Error("Unsupported file type");
     }
 
     return cleanParsedData(parsedData);
   } catch (error) {
-    console.error("❌ Error analyzing file:", error);
+    console.error("❌ File analysis failed:", error);
     throw new Error("Failed to analyze file");
   }
 };
 
-// ✅ Generate Excel File
+// ✅ Excel generation
 const generateExcel = async (data, filePath) => {
+  if (!data.length) throw new Error("No data to generate Excel");
+
   const workbook = new excelJS.Workbook();
   const worksheet = workbook.addWorksheet("Extracted Data");
 
-  if (data.length === 0) {
-    throw new Error("No data to generate Excel");
-  }
-
-  // ✅ Extract headers dynamically
-  const headers = Object.keys(data[0]);
-
-  worksheet.columns = headers.map((header) => ({
+  worksheet.columns = Object.keys(data[0]).map(header => ({
     header,
     key: header,
-    width: 30,
+    width: 30
   }));
 
-  // ✅ Make headers bold
-  worksheet.getRow(1).eachCell((cell) => {
+  worksheet.getRow(1).eachCell(cell => {
     cell.font = { bold: true };
   });
 
-  // ✅ Add data rows
-  data.forEach((entry) => {
+  data.forEach(entry => {
     worksheet.addRow(entry);
   });
 
@@ -226,38 +155,36 @@ const generateExcel = async (data, filePath) => {
   return filePath;
 };
 
-// ✅ Upload file & store metadata in MongoDB
+// ✅ Upload and save file metadata
 export const uploadFile = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
-    const { originalname, path, mimetype, size } = req.file;
-    const newFile = new File({
+    const { originalname, path: filepath, mimetype, size } = req.file;
+    const file = new File({
       filename: originalname,
-      filepath: path,
+      filepath,
       mimetype,
       size,
-      userId: req.user.userId,
+      userId: req.user.userId
     });
 
-    await newFile.save();
-    res.status(201).json({ message: "File uploaded successfully", file: newFile });
+    await file.save();
+    res.status(201).json({ message: "File uploaded successfully", file });
   } catch (error) {
     res.status(500).json({ message: "Error uploading file", error });
   }
 };
 
-// ✅ Analyze the file & generate an Excel sheet
+// ✅ Analyze uploaded file and export to Excel
 export const analyzeAndGenerateExcel = async (req, res) => {
   try {
     const { fileId } = req.params;
-    console.log("🔍 Analyzing File ID:", fileId);
-
     const file = await File.findById(fileId);
     if (!file) return res.status(404).json({ message: "File not found" });
 
     const analyzedData = await analyzeFile(file.filepath);
-    if (!analyzedData.length) return res.status(400).json({ message: "No valid data found in file" });
+    if (!analyzedData.length) return res.status(400).json({ message: "No valid data found" });
 
     file.analyzedData = analyzedData;
     await file.save();
@@ -266,20 +193,18 @@ export const analyzeAndGenerateExcel = async (req, res) => {
     const excelFilePath = path.join("uploads", excelFileName);
     await generateExcel(analyzedData, excelFilePath);
 
-    res.status(200).json({ message: "File analyzed and Excel generated", excelPath: `/uploads/${excelFileName}` });
+    res.status(200).json({ message: "Excel generated", excelPath: `/uploads/${excelFileName}` });
   } catch (error) {
-    res.status(500).json({ message: "Error analyzing file", error: error.message });
+    res.status(500).json({ message: "Failed to analyze or export file", error: error.message });
   }
 };
 
-// ✅ Retrieve uploaded files for a specific user
+// ✅ Get user-uploaded files
 export const getUploadedFiles = async (req, res) => {
   try {
     const files = await File.find({ userId: req.user.userId }).sort({ uploadedAt: -1 });
     res.status(200).json(files);
   } catch (error) {
-    console.error("❌ Error retrieving files:", error);
-    res.status(500).json({ message: "Error retrieving files", error: error.message });
+    res.status(500).json({ message: "Failed to retrieve files", error: error.message });
   }
 };
-
