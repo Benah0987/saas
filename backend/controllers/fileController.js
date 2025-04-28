@@ -68,42 +68,31 @@ const execPromise = promisify(exec);
 
 const extractTextFromScannedPDF = async (filePath) => {
   try {
-    // Get the directory name using import.meta.url
     const __dirname = dirname(fileURLToPath(import.meta.url));
-    const outputImagePath = path.join(__dirname, 'temp_image.png');
-    const command = `pdftoppm -png -f 1 -l 1 "${filePath}" "${outputImagePath.replace('.png', '')}"`;
+    const outputBasePath = path.join(__dirname, 'temp_image'); // no extension yet
+
+    // Convert first page of PDF to PNG
+    const command = `pdftoppm -png -f 1 -l 1 "${filePath}" "${outputBasePath}"`;
     await execPromise(command);
-    console.log(`✅ PDF converted to image: ${outputImagePath}`);
-    return await performOCR(outputImagePath);
+
+    // Because pdftoppm creates temp_image-1.png
+    const generatedImagePath = `${outputBasePath}-1.png`;
+
+    if (!fs.existsSync(generatedImagePath)) {
+      throw new Error("Converted image not found");
+    }
+
+    console.log(`✅ Image generated: ${generatedImagePath}`);
+
+    // Perform OCR on the generated image
+    const text = await performOCR(generatedImagePath);
+    return text;
   } catch (error) {
-    console.error('❌ OCR PDF conversion failed:', error);
+    console.error('❌ OCR process failed:', error);
     return null;
   }
 };
-// Example OCR function (using Tesseract.js)
-const performOCR = async (imagePath) => {
-  try {
-    const worker = await createWorker({
-      logger: m => console.log(m) // Optional: for logging progress
-    });
-    
-    // Modern Tesseract.js versions use this syntax:
-    await worker.load();
-    await worker.initialize('eng');
-    
-    const { data: { text } } = await worker.recognize(imagePath);
-    await worker.terminate();
-    
-    // Clean up the temporary image file
-    fs.unlinkSync(imagePath);
-    return text.trim();
-  } catch (error) {
-    console.error('❌ OCR failed:', error);
-    // Ensure we clean up even if OCR fails
-    if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
-    return null;
-  }
-};
+
 
 // ========================
 // RESUME PARSING LOGIC
@@ -197,28 +186,73 @@ const cleanParsedData = (data) => {
 // Parse .ris, .nbib, .enw files
 const parseCitationFile = (content) => {
   let entries = [], entry = {};
-  content.split("\n").forEach(line => {
-    if (!line.trim()) {
+  const lines = content.split("\n");
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) {
       if (Object.keys(entry).length) {
         entries.push(entry);
         entry = {};
       }
-    } else {
-      const [key, value] = line.split(/[-%]\s+/);
-      if (key && value) {
-        const k = key.trim(), v = value.trim();
-        if (["A", "AU"].includes(k)) entry.authors = entry.authors ? entry.authors + ", " + v : v;
-        else if (["T", "TI"].includes(k)) entry.title = v;
-        else if (["J", "JO"].includes(k)) entry.journal = v;
-        else if (["D", "PY"].includes(k)) entry.year = v;
-        else if (["DO", "DOI"].includes(k)) entry.doi = v;
-        else entry[k] = v;
+      continue;
+    }
+
+    // Match RIS tags (e.g., %A, %T) with flexible spacing
+    const match = line.match(/^%([A-Z0-9]+)\s+(.*)/);
+    if (match) {
+      const [, key, value] = match;
+      switch(key) {
+        case "A":
+        case "AU":
+          entry.authors = entry.authors ? `${entry.authors}, ${value}` : value;
+          break;
+        case "T":
+        case "TI":
+          entry.title = value;
+          break;
+        case "J":
+        case "JO":
+          entry.journal = value;
+          break;
+        case "D":
+        case "PY":
+          entry.year = value;
+          break;
+        case "DO":
+        case "DOI":
+          entry.doi = value;
+          break;
+        case "V":
+          entry.volume = value;
+          break;
+        case "N":
+          entry.issue = value;
+          break;
+        case "P":
+          entry.pages = value;
+          break;
+        case "U":
+          entry.url = value;
+          break;
+        case "X":
+          entry.abstract = value;
+          break;
+        default:
+          entry[key] = value;  // Handle any additional keys that might exist
+          break;
       }
     }
-  });
-  if (Object.keys(entry).length) entries.push(entry);
+  }
+
+  // Add the last entry if there are any
+  if (Object.keys(entry).length) {
+    entries.push(entry);
+  }
+
   return entries;
 };
+
 
 // ========================
 // MAIN FILE ANALYSIS
@@ -383,3 +417,4 @@ export const getUploadedFiles = async (req, res) => {
     res.status(500).json({ message: "Failed to retrieve files", error: error.message });
   }
 };
+
