@@ -10,13 +10,17 @@ import {
   DialogContent,
   IconButton,
   Chip,
-  Tab,
   Tabs,
+  Tab,
   TextField,
   Grid,
   Tooltip,
   LinearProgress,
   CircularProgress,
+  List,
+  ListItem,
+  ListItemText,
+  Divider,
 } from "@mui/material";
 import { useDropzone } from "react-dropzone";
 import { AuthContext } from "../context/AuthContext";
@@ -68,6 +72,104 @@ const Home = () => {
     };
   }, [filePreviews]);
 
+  const parseBibtex = (content) => {
+    try {
+      const entries = content.split('@').filter(entry => entry.trim().length > 0);
+      return entries.map(entry => {
+        const typeMatch = entry.match(/^[^{]+/);
+        const contentMatch = entry.match(/{([^}]*)}/);
+        return {
+          type: typeMatch ? typeMatch[0].trim() : 'unknown',
+          content: contentMatch ? contentMatch[1] : entry,
+          raw: `@${entry}`
+        };
+      });
+    } catch (e) {
+      console.error("Error parsing BibTeX:", e);
+      return [{ type: "error", content: "Could not parse BibTeX", raw: content }];
+    }
+  };
+
+  const parseCitationFile = (content) => {
+    const entries = [];
+    let currentEntry = {};
+    
+    content.split(/\r?\n/).forEach(line => {
+      if (!line.trim()) {
+        if (Object.keys(currentEntry).length) {
+          entries.push(currentEntry);
+          currentEntry = {};
+        }
+        return;
+      }
+
+      const separatorIndex = line.search(/[-%]\s+/);
+      if (separatorIndex === -1) {
+        // Handle multi-line fields
+        const lastKey = Object.keys(currentEntry).pop();
+        if (lastKey) currentEntry[lastKey] += `\n${line.trim()}`;
+        return;
+      }
+
+      const key = line.substring(0, separatorIndex).trim();
+      const value = line.substring(separatorIndex + 1).trim();
+
+      switch (key) {
+        case 'TY':
+        case '%0':
+          currentEntry.type = value;
+          break;
+        case 'AU':
+        case '%A':
+          currentEntry.authors = currentEntry.authors 
+            ? [...currentEntry.authors, value] 
+            : [value];
+          break;
+        case 'TI':
+        case '%T':
+          currentEntry.title = value;
+          break;
+        case 'JO':
+        case 'JF':
+        case '%J':
+          currentEntry.journal = value;
+          break;
+        case 'PY':
+        case 'Y1':
+        case '%D':
+          currentEntry.year = value;
+          break;
+        case 'DO':
+        case '%R':
+          currentEntry.doi = value;
+          break;
+        case 'AB':
+        case '%X':
+          currentEntry.abstract = value;
+          break;
+        case 'UR':
+        case '%U':
+          currentEntry.url = value;
+          break;
+        case 'ER':
+        case '%Z':
+          if (Object.keys(currentEntry).length) {
+            entries.push(currentEntry);
+            currentEntry = {};
+          }
+          break;
+        default:
+          currentEntry[key.toLowerCase()] = value;
+      }
+    });
+
+    if (Object.keys(currentEntry).length) {
+      entries.push(currentEntry);
+    }
+
+    return entries;
+  };
+
   const { getRootProps, getInputProps } = useDropzone({
     accept: "*",
     multiple: true,
@@ -81,41 +183,29 @@ const Home = () => {
           return { type: "image", url: URL.createObjectURL(file) };
         } else if (file.type === "application/pdf") {
           return { type: "pdf", url: URL.createObjectURL(file) };
-        } else if (file.name.match(/\.(bib|nbib)$/i)) {
+        } else if (file.name.match(/\.(bib|bibtex|ris|enw|nbib)$/i)) {
           return new Promise((resolve) => {
             const reader = new FileReader();
-            reader.onload = (e) =>
-              resolve({ 
-                type: "bibtex", 
-                content: e.target.result,
-                rawContent: e.target.result,
-                parsedContent: parseBibtex(e.target.result)
+            reader.onload = (e) => {
+              const content = e.target.result;
+              const isBibtex = file.name.match(/\.(bib|bibtex)$/i);
+              resolve({
+                type: "citation",
+                fileType: isBibtex ? 'bibtex' : file.name.split('.').pop().toLowerCase(),
+                content: content,
+                parsedContent: isBibtex ? parseBibtex(content) : parseCitationFile(content),
+                fileName: file.name
               });
+            };
             reader.readAsText(file);
           });
         } else {
-          return { type: "unknown" };
+          return { type: "unknown", fileName: file.name };
         }
       });
       Promise.all(previews).then(setFilePreviews);
     },
   });
-
-  const parseBibtex = (content) => {
-    try {
-      const entries = content.split('@');
-      return entries
-        .filter(entry => entry.trim().length > 0)
-        .map(entry => ({
-          type: (entry.match(/^[^{]+/) || ['unknown'])[0].trim(),
-          content: (entry.match(/{([^}]*)}/) || [entry])[1],
-          raw: `@${entry}`
-        }));
-    } catch (e) {
-      console.error("Error parsing BibTeX:", e);
-      return [{ type: "error", content: "Could not parse BibTeX", raw: content }];
-    }
-  };
 
   const handleUpload = async () => {
     if (files.length === 0) {
@@ -183,9 +273,24 @@ const Home = () => {
   };
 
   const handlePreview = (index) => {
-    setPreviewFile(filePreviews[index]);
+    const file = filePreviews[index];
+    if (file.type === 'unknown') {
+      if (file.fileName.endsWith('.txt')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setPreviewFile({
+            type: 'text',
+            content: e.target.result
+          });
+        };
+        reader.readAsText(file);
+      }
+    } else {
+      setPreviewFile(file);
+    }
     setPreviewTab(0);
   };
+  
 
   const handleClosePreview = () => {
     setPreviewFile(null);
@@ -197,300 +302,263 @@ const Home = () => {
 
   const getFileIcon = (filename) => {
     if (filename.endsWith(".pdf")) return <PictureAsPdfIcon color="error" />;
-    if (filename.match(/\.(bib|nbib)$/i)) return <ArticleIcon color="secondary" />;
+    if (filename.match(/\.(bib|bibtex|ris|enw|nbib)$/i)) return <ArticleIcon color="secondary" />;
     if (filename.match(/\.(jpg|jpeg|png|gif|bmp|svg|webp)$/i)) return <ImageIcon color="primary" />;
     return <InsertDriveFileIcon />;
   };
 
   const getFileType = (filename) => {
-    if (filename.match(/\.(bib|nbib)$/i)) return 'BibTeX';
+    if (filename.match(/\.(bib|bibtex)$/i)) return 'BibTeX';
+    if (filename.match(/\.(ris|enw|nbib)$/i)) return 'Citation';
     if (filename.match(/\.(pdf)$/i)) return 'PDF';
     if (filename.match(/\.(jpg|jpeg|png|gif)$/i)) return 'Image';
     return 'Other';
   };
 
+  const renderCitationField = (label, value) => {
+    if (!value) return null;
+    return (
+      <Box sx={{ mt: 1 }}>
+        <Typography variant="caption" color="text.secondary">
+          {label}:
+        </Typography>
+        <Typography variant="body2">
+          {Array.isArray(value) ? value.join('; ') : value}
+        </Typography>
+      </Box>
+    );
+  };
+
   return (
     <Container maxWidth="md" sx={{ my: 4 }}>
-      <Paper elevation={3} sx={{ p: 3, borderRadius: 3 }}>
-        <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold' }}>
-          File Management
+      <Paper elevation={3} sx={{ p: 3, borderRadius: 3, backgroundColor: '#f5f5f5' }}>
+        <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', color: '#333' }}>
+          Upload and Manage Files
         </Typography>
-
-        {/* File Upload Section */}
+  
+        {/* Dropzone */}
         <Box
           {...getRootProps()}
           sx={{
-            border: "2px dashed",
-            borderColor: "primary.main",
-            p: 4,
-            textAlign: "center",
-            cursor: "pointer",
-            "&:hover": {
-              backgroundColor: "action.hover",
-              borderColor: "primary.dark",
-            },
+            border: '2px dashed #007bff', // Vibrant blue for the border
             borderRadius: 2,
-            mb: 3,
+            p: 4,
+            textAlign: 'center',
+            cursor: 'pointer',
+            my: 3,
+            transition: 'all 0.3s ease', // Smooth transition for hover effect
+            '&:hover': {
+              borderColor: '#0056b3', // Darker blue on hover
+              backgroundColor: '#e3f2fd', // Light blue background on hover
+            },
+            '&:active': {
+              transform: 'scale(0.98)', // Slight compression on click
+            },
           }}
         >
           <input {...getInputProps()} />
-          <Typography variant="body1">
-            Drag & drop files here, or click to select files
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Supported formats: PDF, Images, BibTeX, and more
+          <Typography variant="body1" color="text.secondary" sx={{ fontSize: '1.2rem' }}>
+            Drag and drop files here, or click to select
           </Typography>
         </Box>
-
-        {/* Selected Files Preview */}
-        {files.length > 0 && (
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="h6" gutterBottom sx={{ fontWeight: 'medium' }}>
-              Files to Upload ({files.length})
-            </Typography>
-            {files.map((file, index) => (
-              <Paper key={index} elevation={1} sx={{ mb: 2, p: 2, borderRadius: 2 }}>
-                <Grid container alignItems="center">
-                  <Grid item xs={8}>
-                    <Box display="flex" alignItems="center">
-                      {getFileIcon(file.name)}
-                      <Box sx={{ ml: 2 }}>
-                        <Typography variant="body1" fontWeight="medium">
-                          {file.name}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {(file.size / 1024).toFixed(2)} KB
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </Grid>
-                  <Grid item xs={4}>
-                    <Box display="flex" justifyContent="flex-end">
-                      <Chip 
-                        label={getFileType(file.name)}
-                        size="small"
-                        variant="outlined"
-                        sx={{ mr: 1 }}
-                      />
-                      <Tooltip title="Preview">
-                        <IconButton onClick={() => handlePreview(index)}>
-                          <PreviewIcon />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                  </Grid>
-                </Grid>
-              </Paper>
-            ))}
-          </Box>
-        )}
-
-        {/* Upload Controls */}
-        <Box sx={{ mb: 3 }}>
-          <Button
-            variant="contained"
-            fullWidth
-            onClick={handleUpload}
-            disabled={uploading || files.length === 0}
-            sx={{ mb: 1 }}
-          >
-            {uploading ? (
-              <>
-                <CircularProgress size={24} sx={{ mr: 2 }} />
-                Uploading...
-              </>
-            ) : (
-              `Upload ${files.length} File${files.length !== 1 ? 's' : ''}`
-            )}
-          </Button>
-          {uploading && (
-            <LinearProgress
-              variant="determinate"
-              value={uploadProgress}
-              sx={{ height: 8, borderRadius: 4 }}
-            />
-          )}
-        </Box>
-
-        {/* Uploaded Files Section */}
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="h5" gutterBottom sx={{ fontWeight: 'medium' }}>
-            Your Uploaded Files ({uploadedFiles.length})
-          </Typography>
-          
-          {uploadedFiles.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              No files have been uploaded yet
-            </Typography>
-          ) : (
-            <Box>
-              {uploadedFiles.map((file) => (
-                <Paper 
-                  key={file._id}
-                  elevation={1}
-                  sx={{ 
-                    mb: 2, 
-                    p: 2,
-                    borderRadius: 2,
-                    backgroundColor: file._id.startsWith("temp-") ? 
-                      'action.hover' : 'background.paper'
-                  }}
-                >
-                  <Grid container alignItems="center">
-                    <Grid item xs={12} sm={8}>
-                      <Box display="flex" alignItems="center">
-                        {getFileIcon(file.filename)}
-                        <Box sx={{ ml: 2 }}>
-                          <Typography variant="body1" fontWeight="medium">
-                            {file.filename}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Uploaded: {new Date(file.uploadedAt).toLocaleString()}
-                          </Typography>
-                        </Box>
-                      </Box>
-                    </Grid>
-                    
-                    <Grid item xs={12} sm={4}>
-                      <Box display="flex" justifyContent="flex-end" sx={{ mt: { xs: 1, sm: 0 } }}>
-                        <Chip 
-                          label={getFileType(file.filename)}
-                          size="small"
-                          variant="outlined"
-                          sx={{ mr: 1 }}
-                        />
-                        
-                        <Tooltip title="Download">
-                          <IconButton
-                            onClick={() => handleDownload(file.path)}
-                            disabled={file._id.startsWith("temp-")}
-                          >
-                            <DownloadIcon />
-                          </IconButton>
-                        </Tooltip>
-                        
-                        <Tooltip title="Analyze">
-                          <IconButton
-                            onClick={() => handleAnalyze(file._id)}
-                            disabled={analyzing || file._id.startsWith("temp-")}
-                            sx={{ ml: 1 }}
-                          >
-                            <AnalyticsIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
-                    </Grid>
-                  </Grid>
-                </Paper>
-              ))}
-            </Box>
-          )}
-        </Box>
-
-        {/* Error Display */}
+  
+        {/* Error */}
         {error && (
-          <Box sx={{ 
-            backgroundColor: 'error.light', 
-            p: 2, 
-            borderRadius: 2,
-            mt: 2
-          }}>
-            <Typography color="error">{error}</Typography>
-          </Box>
+          <Typography color="error" sx={{ mb: 2, fontWeight: 'bold' }}>
+            {error}
+          </Typography>
         )}
-
-        {/* File Preview Dialog */}
-        <Dialog
-          open={!!previewFile}
-          onClose={handleClosePreview}
-          maxWidth="md"
-          fullWidth
-          sx={{ '& .MuiDialog-paper': { height: '80vh' } }}
-        >
-          <DialogTitle>
-            File Preview
-            <IconButton
-              aria-label="close"
-              onClick={handleClosePreview}
-              sx={{
-                position: "absolute",
-                right: 8,
-                top: 8,
-                color: (theme) => theme.palette.grey[500],
-              }}
-            >
-              <CloseIcon />
-            </IconButton>
-          </DialogTitle>
-          
-          {previewFile?.type === "bibtex" && (
-            <>
-              <Tabs value={previewTab} onChange={handleTabChange} sx={{ px: 2 }}>
-                <Tab label="Parsed View" />
-                <Tab label="Raw Content" />
-              </Tabs>
-              <DialogContent dividers sx={{ overflow: 'auto' }}>
-                {previewTab === 0 ? (
-                  <Box>
-                    {previewFile.parsedContent.map((entry, index) => (
-                      <Box key={index} sx={{ mb: 3, p: 2, border: '1px solid #eee', borderRadius: 1 }}>
-                        <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                          {entry.type.toUpperCase()}
-                        </Typography>
-                        <TextField
-                          value={entry.content}
-                          multiline
-                          fullWidth
-                          variant="outlined"
-                          InputProps={{
-                            readOnly: true,
-                            sx: { fontFamily: 'monospace', fontSize: '0.875rem' }
-                          }}
-                        />
-                      </Box>
-                    ))}
-                  </Box>
-                ) : (
-                  <TextField
-                    value={previewFile.rawContent}
-                    multiline
-                    fullWidth
-                    variant="outlined"
-                    InputProps={{
-                      readOnly: true,
-                      sx: { fontFamily: 'monospace', fontSize: '0.875rem' }
-                    }}
+  
+        {/* Preview Uploaded Files */}
+        {filePreviews.length > 0 && (
+          <>
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', color: '#444' }}>
+              Files to Upload
+            </Typography>
+            <List>
+              {filePreviews.map((file, index) => (
+                <ListItem
+                  key={index}
+                  secondaryAction={
+                    <Tooltip title="Preview">
+                      <IconButton edge="end" onClick={() => handlePreview(index)}>
+                        <PreviewIcon />
+                      </IconButton>
+                    </Tooltip>
+                  }
+                >
+                  {getFileIcon(file.fileName || 'file')}
+                  <ListItemText
+                    primary={file.fileName || file.type.toUpperCase()}
+                    secondary={file.type}
+                    sx={{ ml: 2, color: '#555' }}
                   />
+                </ListItem>
+              ))}
+            </List>
+  
+            <Box sx={{ textAlign: 'center', mt: 2 }}>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleUpload}
+                disabled={uploading}
+                sx={{
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  backgroundColor: '#007bff',
+                  '&:hover': {
+                    backgroundColor: '#0056b3', // Darker blue for hover
+                  },
+                  fontWeight: 'bold',
+                  textTransform: 'none',
+                  boxShadow: '0px 4px 12px rgba(0, 123, 255, 0.3)', // Shadow for depth
+                }}
+              >
+                {uploading ? (
+                  <>
+                    Uploading...
+                    <CircularProgress size={20} sx={{ ml: 1 }} />
+                  </>
+                ) : (
+                  'Upload Files'
                 )}
-              </DialogContent>
+              </Button>
+            </Box>
+  
+            {uploading && (
+              <LinearProgress
+                variant="determinate"
+                value={uploadProgress}
+                sx={{
+                  mt: 2,
+                  borderRadius: 2,
+                  backgroundColor: '#e3f2fd',
+                  '& .MuiLinearProgress-bar': {
+                    backgroundColor: '#007bff', // Blue progress bar
+                  },
+                }}
+              />
+            )}
+          </>
+        )}
+  
+        {/* Uploaded Files */}
+        {uploadedFiles.length > 0 && (
+          <>
+            <Divider sx={{ my: 4, borderColor: '#007bff' }} />
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', color: '#444' }}>
+              Uploaded Files
+            </Typography>
+            <List>
+              {uploadedFiles.map((file) => (
+                <ListItem
+                  key={file._id}
+                  secondaryAction={
+                    <Tooltip title="Analyze">
+                      <IconButton edge="end" onClick={() => handleAnalyze(file._id)}>
+                        <AnalyticsIcon />
+                      </IconButton>
+                    </Tooltip>
+                  }
+                >
+                  {getFileIcon(file.filename)}
+                  <ListItemText
+                    primary={file.filename}
+                    secondary={`Uploaded: ${new Date(file.uploadedAt).toLocaleString()}`}
+                    sx={{ ml: 2, color: '#555' }}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          </>
+        )}
+      </Paper>
+  
+      {/* File Preview Modal */}
+      <Dialog
+        open={Boolean(previewFile)}
+        onClose={handleClosePreview}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle sx={{ fontWeight: 'bold', color: '#333' }}>
+          Preview
+          <IconButton
+            aria-label="close"
+            onClick={handleClosePreview}
+            sx={{
+              position: 'absolute',
+              right: 8,
+              top: 8,
+              color: (theme) => theme.palette.grey[500],
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          {previewFile?.type === 'image' && (
+            <Box component="img" src={previewFile.url} alt="Preview" sx={{ width: '100%', borderRadius: 2 }} />
+          )}
+          {previewFile?.type === 'pdf' && (
+            <iframe src={previewFile.url} width="100%" height="600px" title="PDF Preview" />
+          )}
+          {previewFile?.type === 'citation' && (
+            <>
+              <Tabs value={previewTab} onChange={handleTabChange}>
+                <Tab label="Formatted View" />
+                <Tab label="Raw View" />
+              </Tabs>
+              {previewTab === 0 ? (
+                previewFile.parsedContent.map((entry, idx) => (
+                  <Paper key={idx} sx={{ p: 2, my: 2 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                      {entry.title || '(No Title)'}
+                    </Typography>
+                    {renderCitationField('Type', entry.type)}
+                    {renderCitationField('Authors', entry.authors)}
+                    {renderCitationField('Journal', entry.journal)}
+                    {renderCitationField('Year', entry.year)}
+                    {renderCitationField('DOI', entry.doi)}
+                    {renderCitationField('Abstract', entry.abstract)}
+                    {renderCitationField('URL', entry.url)}
+                  </Paper>
+                ))
+              ) : (
+                <Box sx={{ mt: 2 }}>
+                  <TextField
+                    fullWidth
+                    multiline
+                    rows={20}
+                    variant="outlined"
+                    value={previewFile.content}
+                  />
+                </Box>
+              )}
             </>
           )}
-
-          {previewFile?.type === "image" && (
-            <DialogContent dividers sx={{ display: 'flex', justifyContent: 'center' }}>
-              <img
-                src={previewFile.url}
-                alt="Preview"
-                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+          {previewFile?.type === 'text' && (
+            <Box sx={{ mt: 2 }}>
+              <TextField
+                fullWidth
+                multiline
+                rows={20}
+                variant="outlined"
+                value={previewFile.content}
               />
-            </DialogContent>
+            </Box>
           )}
-
-          {previewFile?.type === "pdf" && (
-            <DialogContent dividers sx={{ p: 0, height: '100%' }}>
-              <iframe
-                src={previewFile.url}
-                width="100%"
-                height="100%"
-                title="PDF Preview"
-                style={{ border: 'none' }}
-              />
-            </DialogContent>
-          )}
-        </Dialog>
-      </Paper>
+        </DialogContent>
+      </Dialog>
     </Container>
   );
-};
+}  
 
-export default Home;
+export default Home
+
+
+
+
+
+
