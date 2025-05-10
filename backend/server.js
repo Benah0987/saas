@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 import path from "path"; // Import for serving static files
 import fileRoutes from "./routes/fileRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
-import adminRoutes from "./routes/adminRoutes.js"; // Import the admin routes
+import adminRoutes from "./routes/adminRoutes.js"; // Import admin routes
 
 dotenv.config();
 const app = express();
@@ -27,7 +27,7 @@ app.get("/", (req, res) => {
 // API Routes
 app.use("/api/files", fileRoutes);
 app.use("/api/auth", authRoutes);
-app.use("/api/admin", adminRoutes); // Add the admin route here
+app.use("/api/admin", adminRoutes); // Ensure this is correct
 
 // MongoDB Connection with Retry Mechanism
 const connectDB = async () => {
