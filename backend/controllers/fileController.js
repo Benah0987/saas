@@ -254,6 +254,37 @@ const parseCitationFile = (content) => {
 };
 
 
+
+// ✅ Get all uploaded files (only accessible by admins)
+// fileController.js
+export const getAllFiles = async (req, res) => {
+  try {
+    const files = await File.find()
+      .populate('userId', 'username email')
+      .sort({ uploadedAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: files.length,
+      files: files.map(file => ({
+        id: file._id,
+        filename: file.filename,
+        size: file.size,
+        uploadedAt: file.uploadedAt,
+        user: file.userId // Contains username and email
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch files",
+      error: error.message
+    });
+  }
+};
+
+
+
 // ========================
 // MAIN FILE ANALYSIS
 // ========================
